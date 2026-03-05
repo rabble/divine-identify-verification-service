@@ -67,7 +67,12 @@ app.get('/', (c) => {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Divine Identity Verification Service</title>
+  <title>Divine Identity Verification — Prove You Are Who You Say You Are</title>
+  <meta name="description" content="Verify your identity across platforms. Link your Twitter, GitHub, Bluesky, Mastodon, and more to your Nostr profile to prevent impersonation and build trust.">
+  <meta property="og:title" content="Divine Identity Verification">
+  <meta property="og:description" content="Prove you are who you say you are. Link your social accounts to your Nostr identity to prevent impersonation.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="${origin}">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -75,14 +80,65 @@ app.get('/', (c) => {
       line-height: 1.6; color: #333; background: #f8fafc;
     }
     .container { max-width: 900px; margin: 0 auto; padding: 2rem; }
-    header { text-align: center; margin-bottom: 2.5rem; padding: 2rem 0; }
-    h1 { font-size: 2.2rem; color: #1a202c; margin-bottom: 0.5rem; }
-    .tagline { color: #718096; font-size: 1.1rem; margin-top: 0.5rem; }
-    .badge {
-      display: inline-block; padding: 0.25rem 0.75rem; border-radius: 9999px;
-      font-size: 0.75rem; font-weight: 600; text-transform: uppercase; margin-left: 0.5rem;
+
+    /* Hero */
+    .hero { text-align: center; padding: 3rem 1rem 2rem; }
+    .hero h1 { font-size: 2.4rem; color: #1a202c; margin-bottom: 0.75rem; font-weight: 800; }
+    .hero .subtitle { font-size: 1.2rem; color: #4a5568; max-width: 600px; margin: 0 auto 1.5rem; }
+    .hero .cta-row { display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; margin-top: 1.5rem; }
+    .btn {
+      display: inline-block; padding: 0.7rem 1.5rem; border-radius: 10px;
+      font-size: 1rem; font-weight: 600; text-decoration: none; cursor: pointer;
+      border: none; transition: all 0.2s;
     }
-    .badge-live { background: #c6f6d5; color: #276749; }
+    .btn-primary { background: #4299e1; color: white; }
+    .btn-primary:hover { background: #3182ce; text-decoration: none; }
+    .btn-outline { background: white; color: #4299e1; border: 2px solid #4299e1; }
+    .btn-outline:hover { background: #ebf8ff; text-decoration: none; }
+
+    /* Value props */
+    .value-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 1.25rem; margin: 2rem 0;
+    }
+    .value-card {
+      background: white; border-radius: 12px; padding: 1.5rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .value-card .icon { font-size: 2rem; margin-bottom: 0.75rem; }
+    .value-card h3 { font-size: 1.1rem; color: #1a202c; margin-bottom: 0.5rem; }
+    .value-card p { font-size: 0.9rem; color: #4a5568; margin: 0; }
+
+    /* How it works */
+    .steps {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1.5rem; margin: 1.5rem 0;
+    }
+    .step {
+      text-align: center; padding: 1rem;
+    }
+    .step-number {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 40px; height: 40px; border-radius: 50%;
+      background: #4299e1; color: white; font-weight: 700; font-size: 1.1rem;
+      margin-bottom: 0.75rem;
+    }
+    .step h4 { color: #1a202c; margin-bottom: 0.25rem; font-size: 1rem; }
+    .step p { color: #718096; font-size: 0.85rem; margin: 0; }
+
+    /* Platform pills */
+    .platform-grid {
+      display: flex; flex-wrap: wrap; gap: 0.75rem; justify-content: center;
+      margin: 1.5rem 0;
+    }
+    .platform-pill {
+      display: flex; align-items: center; gap: 0.5rem;
+      background: white; border-radius: 10px; padding: 0.6rem 1rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08); font-size: 0.9rem; color: #2d3748;
+    }
+    .platform-pill svg { width: 20px; height: 20px; flex-shrink: 0; }
+
+    /* Sections */
     section {
       background: white; border-radius: 12px; padding: 1.5rem;
       margin-bottom: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1);
@@ -120,103 +176,201 @@ app.get('/', (c) => {
     a:hover { text-decoration: underline; }
     .note { background: #ebf8ff; border-left: 3px solid #4299e1; padding: 0.5rem 0.75rem; border-radius: 0 6px 6px 0; margin: 0.5rem 0; font-size: 0.85rem; }
     footer { text-align: center; padding: 2rem 0; color: #a0aec0; font-size: 0.85rem; }
-    nav { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem; justify-content: center; }
-    nav a {
-      background: #edf2f7; padding: 0.3rem 0.75rem; border-radius: 6px;
-      font-size: 0.8rem; color: #4a5568;
+
+    /* Divider */
+    .section-divider {
+      text-align: center; padding: 2rem 0 1rem; color: #a0aec0; font-size: 0.85rem;
     }
-    nav a:hover { background: #e2e8f0; text-decoration: none; }
+    .section-divider span {
+      background: #f8fafc; padding: 0 1rem; position: relative;
+    }
+    .section-divider::before {
+      content: ''; display: block; height: 1px; background: #e2e8f0;
+      position: relative; top: 0.7rem;
+    }
   </style>
 </head>
 <body>
   <div class="container">
-    <header>
-      <h1>Divine Identity Verification <span class="badge badge-live">Live</span></h1>
-      <p class="tagline">Server-side verification of <a href="https://github.com/nostr-protocol/nips/blob/master/39.md">NIP-39</a> identity claims and <a href="https://github.com/nostr-protocol/nips/blob/master/05.md">NIP-05</a> identifiers for <a href="https://divine.video">Divine</a></p>
-      <nav>
-        <a href="#try-it" style="background:#4299e1;color:white;">Try It</a>
-        <a href="#about">About</a>
-        <a href="#platforms">Platforms</a>
-        <a href="#single-verify">Single Verify</a>
-        <a href="#batch-verify">Batch Verify</a>
-        <a href="#get-verify">GET Verify</a>
-        <a href="#nip05">NIP-05</a>
-        <a href="#oauth">OAuth</a>
-        <a href="#errors">Errors</a>
-        <a href="#rate-limits">Rate Limits</a>
-        <a href="#caching">Caching</a>
-      </nav>
-    </header>
 
-    <section id="try-it" style="border:2px solid #4299e1;">
-      <h2>Try It</h2>
-      <p>Enter an npub, NIP-05 identifier, or hex pubkey to check identity verifications.</p>
+    <!-- HERO -->
+    <div class="hero">
+      <h1>Prove You Are Who You Say You Are</h1>
+      <p class="subtitle">Link your social media accounts to your <a href="https://divine.video">Divine</a> profile so people know it's really you. Like a verified badge &mdash; but one that you control, and anyone can check.</p>
+      <div class="cta-row">
+        <a href="#check" class="btn btn-primary">Look Up Someone</a>
+        <a href="#how-to-verify" class="btn btn-outline">Get Verified</a>
+      </div>
+    </div>
+
+    <!-- WHY VERIFY -->
+    <div class="value-grid">
+      <div class="value-card">
+        <div class="icon">&#128274;</div>
+        <h3>Stop Impersonation</h3>
+        <p>Anyone can copy your name and photo on a new platform. When you verify, you create a link between your accounts that nobody else can fake &mdash; because only you can post from your real accounts.</p>
+      </div>
+      <div class="value-card">
+        <div class="icon">&#9989;</div>
+        <h3>Build Trust</h3>
+        <p>When someone finds your Divine profile, they can see that your Twitter, GitHub, Bluesky, and other accounts are all confirmed to be you. No guessing, no doubt.</p>
+      </div>
+      <div class="value-card">
+        <div class="icon">&#127760;</div>
+        <h3>You're in Control</h3>
+        <p>Unlike platform-specific blue checkmarks, these verifications don't depend on any company. They're open, transparent, and portable &mdash; they go wherever you go.</p>
+      </div>
+    </div>
+
+    <!-- SUPPORTED PLATFORMS -->
+    <div style="text-align:center;margin:2rem 0 0.75rem;">
+      <h2 style="border:none;display:inline-block;padding:0;margin:0;font-size:1.1rem;">Works with the platforms you already use</h2>
+    </div>
+    <div class="platform-grid">
+      <div class="platform-pill">
+        <svg viewBox="0 0 24 24" fill="#333"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+        Twitter / X
+      </div>
+      <div class="platform-pill">
+        <svg viewBox="0 0 24 24" fill="#333"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+        GitHub
+      </div>
+      <div class="platform-pill">
+        <svg viewBox="0 0 24 24" fill="#333"><path d="M12 2C7.8 5.4 5 9 5 11.5c0 2.5 1.2 3.6 2.5 3.8-1 .3-3.5 1-2.5 3.2.7 1.5 3.5 1.5 5 .5 1-.7 1.7-1.7 2-2.7.3 1 1 2 2 2.7 1.5 1 4.3 1 5-.5 1-2.2-1.5-2.9-2.5-3.2 1.3-.2 2.5-1.3 2.5-3.8 0-2.5-2.8-6.1-7-9.5z"/></svg>
+        Bluesky
+      </div>
+      <div class="platform-pill">
+        <svg viewBox="0 0 24 24" fill="#333"><path d="M23.268 5.313c-.35-2.578-2.617-4.61-5.304-5.004C17.51.242 15.792 0 11.813 0h-.03c-3.98 0-4.835.242-5.288.309C3.882.692 1.496 2.518.917 5.127.64 6.412.61 7.837.661 9.143c.074 1.874.088 3.745.26 5.611.118 1.24.325 2.47.62 3.68.55 2.237 2.777 4.098 4.96 4.857 2.336.792 4.849.923 7.256.38.265-.061.527-.132.786-.213.585-.184 1.27-.39 1.774-.753a.057.057 0 00.023-.043v-1.809a.052.052 0 00-.02-.041.053.053 0 00-.046-.01 20.282 20.282 0 01-4.709.547c-2.73 0-3.463-1.284-3.674-1.818a5.593 5.593 0 01-.319-1.433.053.053 0 01.066-.054c1.517.363 3.072.546 4.632.546.376 0 .75 0 1.125-.01 1.57-.044 3.224-.124 4.768-.422.038-.008.077-.015.11-.024 2.435-.464 4.753-1.92 4.989-5.604.008-.145.03-1.52.03-1.67.002-.512.167-3.63-.024-5.545zm-3.748 9.195h-2.561V8.29c0-1.309-.55-1.976-1.67-1.976-1.23 0-1.846.79-1.846 2.35v3.403h-2.546V8.663c0-1.56-.617-2.35-1.848-2.35-1.112 0-1.668.668-1.668 1.977v6.218H4.822V8.102c0-1.31.337-2.35 1.011-3.12.696-.77 1.608-1.164 2.74-1.164 1.311 0 2.302.5 2.962 1.498l.638 1.06.638-1.06c.66-.999 1.65-1.498 2.96-1.498 1.13 0 2.043.395 2.74 1.164.675.77 1.012 1.81 1.012 3.12z"/></svg>
+        Mastodon
+      </div>
+      <div class="platform-pill">
+        <svg viewBox="0 0 24 24" fill="#333"><path d="M11.944 0A12 12 0 000 12a12 12 0 0012 12 12 12 0 0012-12A12 12 0 0012 0a12 12 0 00-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 01.171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
+        Telegram
+      </div>
+      <div class="platform-pill">
+        <svg viewBox="0 0 24 24" fill="#333"><path d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1569 2.4189z"/></svg>
+        Discord
+      </div>
+    </div>
+
+    <!-- HOW TO VERIFY -->
+    <section id="how-to-verify">
+      <h2>How to Get Verified</h2>
+      <p>It takes about a minute. You're basically telling both platforms "these accounts belong to the same person."</p>
+
+      <div class="steps">
+        <div class="step">
+          <div class="step-number">1</div>
+          <h4>Open your Divine settings</h4>
+          <p>Go to <a href="https://divine.video">divine.video</a> and click on your profile settings.</p>
+        </div>
+        <div class="step">
+          <div class="step-number">2</div>
+          <h4>Pick a platform to link</h4>
+          <p>Choose Twitter, GitHub, Bluesky, Mastodon, Telegram, or Discord.</p>
+        </div>
+        <div class="step">
+          <div class="step-number">3</div>
+          <h4>Connect your account</h4>
+          <p>For Twitter and Bluesky, just log in. For others, post a short message that includes your unique key.</p>
+        </div>
+        <div class="step">
+          <div class="step-number">4</div>
+          <h4>Done &mdash; you're verified</h4>
+          <p>A checkmark shows up on your profile. Anyone can click it to confirm the link is real.</p>
+        </div>
+      </div>
+
+      <div class="note">
+        <strong>No posting required for Twitter and Bluesky.</strong> Just sign in with your account and we'll confirm it's yours. For other platforms, you post a short proof message &mdash; you can delete it afterward if you want, though it's better to keep it up.
+      </div>
+    </section>
+
+    <!-- HOW IT WORKS -->
+    <section id="how-it-works">
+      <h2>How Does It Work?</h2>
+      <p>Think of it like a handshake between two accounts:</p>
+      <ul>
+        <li><strong>Your Divine profile says</strong> "I'm @alice on Twitter"</li>
+        <li><strong>Your Twitter account confirms</strong> "Yes, that Divine profile is mine"</li>
+      </ul>
+      <p>We check both sides automatically. If they match, you're verified. The beauty of this system is that <strong>nobody can fake it</strong> &mdash; an impersonator might copy your name and photo, but they can't post from your real Twitter account.</p>
+      <p>This is the same approach used by <a href="https://keybase.io">Keybase</a> &mdash; a proven method for cross-platform identity verification, now available for Divine and the broader Nostr ecosystem.</p>
+    </section>
+
+    <!-- CHECK TOOL -->
+    <section id="check" style="border:2px solid #4299e1;">
+      <h2>Look Up Someone</h2>
+      <p>Want to know if a profile is real? Enter their address (like alice@divine.video) or their public key to see which accounts they've verified.</p>
 
       <div style="display:flex;gap:0.5rem;margin-bottom:1rem;flex-wrap:wrap;">
-        <input id="lookup-input" type="text" placeholder="npub1... or user@domain.com or hex pubkey" style="flex:1;min-width:200px;padding:0.6rem 0.75rem;border:2px solid #e2e8f0;border-radius:8px;font-size:0.95rem;font-family:inherit;outline:none;transition:border-color 0.2s;" onfocus="this.style.borderColor='#4299e1'" onblur="this.style.borderColor='#e2e8f0'">
+        <input id="lookup-input" type="text" placeholder="alice@divine.video or npub1..." style="flex:1;min-width:200px;padding:0.6rem 0.75rem;border:2px solid #e2e8f0;border-radius:8px;font-size:0.95rem;font-family:inherit;outline:none;transition:border-color 0.2s;" onfocus="this.style.borderColor='#4299e1'" onblur="this.style.borderColor='#e2e8f0'">
         <button id="lookup-btn" onclick="doLookup()" style="padding:0.6rem 1.5rem;background:#4299e1;color:white;border:none;border-radius:8px;font-size:0.95rem;cursor:pointer;font-weight:600;transition:background 0.2s;" onmouseover="this.style.background='#3182ce'" onmouseout="this.style.background='#4299e1'">Check</button>
       </div>
       <div id="lookup-status" style="display:none;padding:0.5rem 0.75rem;border-radius:6px;margin-bottom:0.75rem;font-size:0.85rem;"></div>
       <div id="lookup-results"></div>
     </section>
 
-    <section id="about">
-      <h2>About</h2>
-      <p>This service verifies that a Nostr pubkey is linked to accounts on GitHub, Twitter/X, Bluesky, Mastodon, and Telegram. It fetches proof posts server-side, bypassing CORS restrictions that prevent browser-based verification.</p>
+    <!-- DIVIDER -->
+    <div class="section-divider"><span>API Documentation</span></div>
+
+    <!-- API DOCS (for developers) -->
+    <section id="api-about">
+      <h2>About the API</h2>
+      <p>This service verifies that a Nostr pubkey is linked to accounts on supported platforms. It fetches proof posts server-side, bypassing CORS restrictions that prevent browser-based verification.</p>
       <p>Two verification methods are supported:</p>
       <ul>
-        <li><strong>NIP-39 proof posts</strong> &mdash; User publishes a post containing their <code>npub</code> on the external platform. The service fetches the post and checks that the npub is present and the author matches.</li>
-        <li><strong>OAuth login</strong> (Twitter, Bluesky) &mdash; User authenticates directly via "Login with Twitter/Bluesky". No proof post needed.</li>
+        <li><strong>Proof posts</strong> &mdash; User publishes a post containing their <code>npub</code> on the external platform. The service fetches the post and checks that the npub is present and the author matches.</li>
+        <li><strong>OAuth login</strong> (Twitter, Bluesky) &mdash; User authenticates directly. No proof post needed.</li>
       </ul>
     </section>
 
-    <section id="platforms">
+    <section id="platforms-api">
       <h2>Supported Platforms</h2>
       <table>
-        <tr><th>Platform ID</th><th>Label</th><th>Identity Format</th><th>Proof Format</th><th>OAuth</th></tr>
+        <tr><th>Platform</th><th>Identity Format</th><th>Proof Format</th><th>OAuth</th></tr>
         <tr>
-          <td><code>github</code></td><td>GitHub</td>
-          <td>GitHub username (e.g., <code>octocat</code>)</td>
-          <td>Gist ID (e.g., <code>aa5a315d61ae9438b18d</code>)</td>
+          <td><code>github</code></td>
+          <td>Username (e.g., <code>octocat</code>)</td>
+          <td>Gist ID</td>
           <td>No</td>
         </tr>
         <tr>
-          <td><code>twitter</code></td><td>Twitter / X</td>
-          <td>Twitter username (e.g., <code>jack</code>)</td>
-          <td>Tweet ID (e.g., <code>1234567890</code>)</td>
+          <td><code>twitter</code></td>
+          <td>Username (e.g., <code>jack</code>)</td>
+          <td>Tweet ID</td>
           <td>Yes</td>
         </tr>
         <tr>
-          <td><code>bluesky</code></td><td>Bluesky</td>
+          <td><code>bluesky</code></td>
           <td>Handle (e.g., <code>alice.bsky.social</code>)</td>
-          <td>Post rkey (e.g., <code>3k2la7k</code>)</td>
+          <td>Post rkey</td>
           <td>Yes</td>
         </tr>
         <tr>
-          <td><code>mastodon</code></td><td>Mastodon</td>
-          <td><code>instance/@user</code> (e.g., <code>mastodon.social/@alice</code>)</td>
-          <td>Status ID (e.g., <code>109876543210</code>)</td>
+          <td><code>mastodon</code></td>
+          <td><code>instance/@user</code></td>
+          <td>Status ID</td>
           <td>No</td>
         </tr>
         <tr>
-          <td><code>telegram</code></td><td>Telegram</td>
-          <td>Username (e.g., <code>alice</code>)</td>
-          <td><code>channel/messageId</code> (e.g., <code>mygroup/42</code>)</td>
+          <td><code>telegram</code></td>
+          <td>Username</td>
+          <td><code>channel/messageId</code></td>
           <td>No</td>
         </tr>
         <tr>
-          <td><code>discord</code></td><td>Discord</td>
-          <td>Discord username (e.g., <code>alice</code>)</td>
-          <td>Invite code (e.g., <code>AbCdEf</code> from <code>discord.gg/AbCdEf</code>)</td>
+          <td><code>discord</code></td>
+          <td>Username</td>
+          <td>Invite code</td>
           <td>No</td>
         </tr>
       </table>
-      <div class="note">The proof post must contain the user's <code>npub</code> (bech32-encoded Nostr public key, starting with <code>npub1</code>). The service converts the hex pubkey to npub format before searching.</div>
     </section>
 
     <section id="single-verify">
       <h2>POST /api/verify &mdash; Single Claim Verification</h2>
-      <p>Verify a single NIP-39 identity claim. This is the primary endpoint for divine-web integration.</p>
+      <p>Verify a single identity claim.</p>
 
       <h4>Request</h4>
       <pre>POST ${origin}/api/verify
@@ -231,9 +385,9 @@ Content-Type: application/json
 
       <table>
         <tr><th>Field</th><th>Type</th><th>Description</th></tr>
-        <tr><td><code>platform</code></td><td>string</td><td>One of: <code>github</code>, <code>twitter</code>, <code>bluesky</code>, <code>mastodon</code>, <code>telegram</code></td></tr>
-        <tr><td><code>identity</code></td><td>string</td><td>Username or handle on the platform (see format per platform above)</td></tr>
-        <tr><td><code>proof</code></td><td>string</td><td>ID of the proof post (gist ID, tweet ID, etc.)</td></tr>
+        <tr><td><code>platform</code></td><td>string</td><td>One of: <code>github</code>, <code>twitter</code>, <code>bluesky</code>, <code>mastodon</code>, <code>telegram</code>, <code>discord</code></td></tr>
+        <tr><td><code>identity</code></td><td>string</td><td>Username or handle on the platform</td></tr>
+        <tr><td><code>proof</code></td><td>string</td><td>ID of the proof post</td></tr>
         <tr><td><code>pubkey</code></td><td>string</td><td>64-character lowercase hex Nostr public key</td></tr>
       </table>
 
@@ -246,30 +400,18 @@ Content-Type: application/json
   "cached": false
 }</pre>
 
-      <pre><span class="comment">// When verification fails:</span>
-{
-  "platform": "github",
-  "identity": "octocat",
-  "verified": false,
-  "error": "npub not found in gist content",
-  "checked_at": 1709571048,
-  "cached": false
-}</pre>
-
       <table>
         <tr><th>Field</th><th>Type</th><th>Description</th></tr>
-        <tr><td><code>platform</code></td><td>string</td><td>Platform that was checked</td></tr>
-        <tr><td><code>identity</code></td><td>string</td><td>Identity that was checked</td></tr>
-        <tr><td><code>verified</code></td><td>boolean</td><td><code>true</code> if the proof post contains the npub and the author matches</td></tr>
-        <tr><td><code>error</code></td><td>string?</td><td>Human-readable error message (only present when <code>verified</code> is <code>false</code>)</td></tr>
-        <tr><td><code>checked_at</code></td><td>number</td><td>Unix timestamp (seconds) when the verification was performed</td></tr>
-        <tr><td><code>cached</code></td><td>boolean</td><td><code>true</code> if this result was served from cache</td></tr>
+        <tr><td><code>verified</code></td><td>boolean</td><td><code>true</code> if proof post contains the npub and the author matches</td></tr>
+        <tr><td><code>error</code></td><td>string?</td><td>Error message (only when <code>verified</code> is <code>false</code>)</td></tr>
+        <tr><td><code>checked_at</code></td><td>number</td><td>Unix timestamp (seconds)</td></tr>
+        <tr><td><code>cached</code></td><td>boolean</td><td><code>true</code> if served from cache</td></tr>
       </table>
     </section>
 
     <section id="batch-verify">
       <h2>POST /verify &mdash; Batch Verification</h2>
-      <p>Verify up to 10 NIP-39 identity claims in a single request. All claims are verified concurrently.</p>
+      <p>Verify up to 10 claims in a single request.</p>
 
       <h4>Request</h4>
       <pre>POST ${origin}/verify
@@ -277,307 +419,75 @@ Content-Type: application/json
 
 {
   "claims": [
-    {
-      "platform": "github",
-      "identity": "octocat",
-      "proof": "aa5a315d61ae9438b18d",
-      "pubkey": "7e7e9c42a91bfef19fa929e5fda1b72e0ebc1a4c1141673e2794234d86addf4e"
-    },
-    {
-      "platform": "twitter",
-      "identity": "jack",
-      "proof": "1234567890",
-      "pubkey": "7e7e9c42a91bfef19fa929e5fda1b72e0ebc1a4c1141673e2794234d86addf4e"
-    }
+    { "platform": "github", "identity": "octocat", "proof": "aa5a315d61ae9438b18d", "pubkey": "7e7e..." },
+    { "platform": "twitter", "identity": "jack", "proof": "1234567890", "pubkey": "7e7e..." }
   ]
 }</pre>
 
       <h4>Response (200 OK)</h4>
       <pre>{
   "results": [
-    {
-      "platform": "github",
-      "identity": "octocat",
-      "verified": true,
-      "checked_at": 1709571048,
-      "cached": false
-    },
-    {
-      "platform": "twitter",
-      "identity": "jack",
-      "verified": false,
-      "error": "Tweet not found or not embeddable",
-      "checked_at": 1709571048,
-      "cached": false
-    }
+    { "platform": "github", "identity": "octocat", "verified": true, "checked_at": 1709571048, "cached": false },
+    { "platform": "twitter", "identity": "jack", "verified": false, "error": "Tweet not found", "checked_at": 1709571048, "cached": false }
   ]
 }</pre>
-      <p>The <code>results</code> array preserves the same order as the input <code>claims</code> array. Each result has the same shape as the single verification response.</p>
     </section>
 
     <section id="get-verify">
       <h2>GET /verify/:platform/:identity/:proof &mdash; URL-Based Verification</h2>
-      <p>Verify a single claim via URL parameters. Useful for simple integrations or testing.</p>
+      <p>Verify via URL. Returns HTML for browsers, JSON for API clients. Add <code>?format=json</code> to force JSON.</p>
 
-      <h4>Request</h4>
-      <pre>GET ${origin}/verify/github/octocat/aa5a315d61ae9438b18d?pubkey=7e7e9c42...4e</pre>
-
-      <p>For Mastodon, the identity contains slashes, so the URL has extra path segments:</p>
-      <pre>GET ${origin}/verify/mastodon/mastodon.social/@alice/109876543210?pubkey=7e7e...4e</pre>
-
-      <h4>Response</h4>
-      <p>Same shape as the single verification response above.</p>
+      <h4>Examples</h4>
+      <pre>GET ${origin}/verify/github/octocat/aa5a315d61ae9438b18d?pubkey=7e7e9c42...4e
+GET ${origin}/verify/mastodon/mastodon.social/@alice/109876543210?pubkey=7e7e...4e</pre>
     </section>
 
     <section id="nip05">
-      <h2>GET /nip05/verify &mdash; NIP-05 Identifier Verification</h2>
-      <p>Check that a NIP-05 identifier (<code>user@domain</code>) resolves to the given hex pubkey.</p>
+      <h2>GET /nip05/verify &mdash; NIP-05 Verification</h2>
+      <p>Check that a NIP-05 identifier resolves to a given pubkey.</p>
 
-      <h4>Request</h4>
       <pre>GET ${origin}/nip05/verify?name=_@divine.video&amp;pubkey=7e7e9c42...4e</pre>
 
-      <table>
-        <tr><th>Query Param</th><th>Description</th></tr>
-        <tr><td><code>name</code></td><td>NIP-05 identifier, e.g., <code>alice@example.com</code> or <code>_@divine.video</code></td></tr>
-        <tr><td><code>pubkey</code></td><td>64-char hex pubkey to check against</td></tr>
-      </table>
-
-      <h4>Response (200 OK)</h4>
-      <pre><span class="comment">// Verified:</span>
-{
-  "name": "_",
-  "domain": "divine.video",
-  "pubkey": "7e7e9c42...4e",
-  "verified": true,
-  "checked_at": 1709571048,
-  "cached": false
-}
-
-<span class="comment">// Not verified:</span>
-{
-  "name": "_",
-  "domain": "divine.video",
-  "pubkey": "7e7e9c42...4e",
-  "verified": false,
-  "error": "Pubkey does not match NIP-05 registration",
-  "checked_at": 1709571048,
-  "cached": false
-}</pre>
-      <p>The service fetches <code>https://{domain}/.well-known/nostr.json?name={local}</code> and compares the registered pubkey (per <a href="https://github.com/nostr-protocol/nips/blob/master/05.md">NIP-05 spec</a>). Redirects are not followed.</p>
+      <h4>Response</h4>
+      <pre>{ "name": "_", "domain": "divine.video", "pubkey": "7e7e...", "verified": true, "checked_at": 1709571048, "cached": false }</pre>
     </section>
 
     <section id="oauth">
       <h2>OAuth Verification (Twitter, Bluesky)</h2>
-      <p>As an alternative to proof posts, users can verify their identity by logging in with Twitter or Bluesky. This is a browser-based flow.</p>
+      <p>Users can verify by logging in instead of posting a proof.</p>
 
-      <h3>1. Start OAuth Flow</h3>
+      <h3>Start OAuth</h3>
       <pre>GET ${origin}/auth/twitter/start?pubkey=hex64&amp;return_url=https://divine.video/settings
 GET ${origin}/auth/bluesky/start?pubkey=hex64&amp;handle=alice.bsky.social&amp;return_url=https://divine.video/settings</pre>
 
-      <table>
-        <tr><th>Param</th><th>Description</th></tr>
-        <tr><td><code>pubkey</code></td><td>64-char hex Nostr pubkey to associate with the verified identity</td></tr>
-        <tr><td><code>return_url</code></td><td>URL to redirect back to after OAuth completes (must be a trusted origin)</td></tr>
-        <tr><td><code>handle</code></td><td>(Bluesky only) User's Bluesky handle for auth server discovery</td></tr>
-      </table>
-
-      <p>Redirects the user to the platform's OAuth consent screen. After authorization, the callback stores the verification and redirects to <code>return_url</code> with query params:</p>
-
-      <pre><span class="comment">// Success:</span>
-{return_url}?oauth_verified=true&amp;platform=twitter&amp;identity=jack
-
-<span class="comment">// Failure:</span>
-{return_url}?oauth_error=Verification+failed</pre>
-
-      <h3>2. Check OAuth Status</h3>
+      <h3>Check OAuth Status</h3>
       <pre>GET ${origin}/auth/twitter/status?pubkey=hex64&amp;identity=jack</pre>
 
-      <h4>Response</h4>
-      <pre><span class="comment">// Verified via OAuth:</span>
-{
-  "platform": "twitter",
-  "identity": "jack",
-  "pubkey": "7e7e9c42...4e",
-  "verified": true,
-  "method": "oauth",
-  "checked_at": 1709571048
-}
-
-<span class="comment">// Not verified:</span>
-{
-  "platform": "twitter",
-  "identity": "jack",
-  "pubkey": "7e7e9c42...4e",
-  "verified": false,
-  "method": null
-}</pre>
-
-      <div class="note">OAuth verification is also checked as a fallback when using <code>POST /api/verify</code> or <code>POST /verify</code> for twitter and bluesky claims. If the proof post check fails but an OAuth verification exists, it will return <code>verified: true</code>.</div>
-
-      <h3>3. Bluesky Client Metadata</h3>
-      <pre>GET ${origin}/auth/bluesky/client-metadata.json</pre>
-      <p>AT Protocol OAuth requires the client metadata to be publicly hosted. This endpoint serves the OAuth client registration for Bluesky.</p>
+      <div class="note">OAuth verification is also checked as a fallback during proof-post verification for Twitter and Bluesky.</div>
     </section>
 
     <section id="other">
-      <h2>Utility Endpoints</h2>
-
+      <h2>Other Endpoints</h2>
       <div class="endpoint">
         <h3><span class="method get">GET</span> <code>/platforms</code></h3>
-        <p>List all supported platforms and their verification status.</p>
-        <pre>GET ${origin}/platforms
-
-<span class="comment">// Response:</span>
-{
-  "platforms": {
-    "github": { "label": "GitHub", "supported": true },
-    "twitter": { "label": "Twitter / X", "supported": true },
-    "mastodon": { "label": "Mastodon", "supported": true },
-    "telegram": { "label": "Telegram", "supported": true },
-    "bluesky": { "label": "Bluesky", "supported": true }
-  }
-}</pre>
+        <p>List supported platforms.</p>
       </div>
-
       <div class="endpoint">
         <h3><span class="method get">GET</span> <code>/health</code></h3>
-        <p>Health check. Returns 200 if the service is running.</p>
-        <pre>GET ${origin}/health
-
-<span class="comment">// Response:</span>
-{
-  "status": "ok",
-  "service": "divine-identity-verification-service",
-  "version": "1.0.0",
-  "timestamp": 1709571048
-}</pre>
+        <p>Health check. Returns <code>{"status":"ok"}</code>.</p>
       </div>
-
-      <div class="endpoint">
-        <h3><span class="method head">HEAD</span> <code>/api/health</code></h3>
-        <p>Lightweight health check (no body). Returns 200 if up.</p>
-      </div>
-    </section>
-
-    <section id="errors">
-      <h2>Error Responses</h2>
-      <p>All errors return a JSON object with an <code>error</code> field. Some include additional details.</p>
-
-      <table>
-        <tr><th>HTTP Status</th><th>Meaning</th><th>Example <code>error</code> value</th></tr>
-        <tr><td><code>400</code></td><td>Bad request / validation failed</td><td><code>"Invalid or missing pubkey (64-char hex)"</code></td></tr>
-        <tr><td><code>429</code></td><td>Rate limit exceeded</td><td><code>"Rate limit exceeded"</code></td></tr>
-        <tr><td><code>500</code></td><td>Internal server error</td><td><code>"Internal server error"</code></td></tr>
-        <tr><td><code>502</code></td><td>Upstream platform error (OAuth)</td><td><code>"Bluesky token exchange failed"</code></td></tr>
-        <tr><td><code>503</code></td><td>Service not configured</td><td><code>"Twitter OAuth not configured"</code></td></tr>
-      </table>
-
-      <h4>Batch validation error format (400)</h4>
-      <pre>{
-  "error": "Validation failed",
-  "details": [
-    { "index": 0, "error": "Invalid pubkey: must be 64-character hex" },
-    { "index": 2, "error": "Invalid platform: must be one of github, twitter, mastodon, telegram, bluesky" }
-  ]
-}</pre>
-
-      <h4>Common verification error strings</h4>
-      <table>
-        <tr><th>Error</th><th>Meaning</th></tr>
-        <tr><td><code>Gist not found</code></td><td>GitHub gist ID doesn't exist or is private</td></tr>
-        <tr><td><code>Gist owner does not match claimed identity</code></td><td>Gist belongs to a different GitHub user</td></tr>
-        <tr><td><code>npub not found in gist content</code></td><td>Gist exists but doesn't contain the expected npub</td></tr>
-        <tr><td><code>Tweet not found or not embeddable</code></td><td>Tweet doesn't exist, is deleted, or is from a private account</td></tr>
-        <tr><td><code>Tweet author does not match claimed identity</code></td><td>Tweet belongs to a different Twitter user</td></tr>
-        <tr><td><code>Mastodon status not found</code></td><td>Status ID doesn't exist on the specified instance</td></tr>
-        <tr><td><code>Status author does not match claimed identity</code></td><td>Mastodon status was posted by someone else</td></tr>
-        <tr><td><code>Telegram message not found</code></td><td>Telegram message doesn't exist or channel is private</td></tr>
-        <tr><td><code>Message author does not match claimed identity</code></td><td>Telegram message was posted by someone else</td></tr>
-        <tr><td><code>Post or thread not found on Bluesky</code></td><td>Bluesky post doesn't exist</td></tr>
-        <tr><td><code>Post author does not match claimed identity</code></td><td>Bluesky post was authored by a different handle/DID</td></tr>
-        <tr><td><code>Invite not found or expired</code></td><td>Discord invite code doesn't exist or was revoked</td></tr>
-        <tr><td><code>Invite does not point to a server</code></td><td>Discord invite is for a group DM, not a server</td></tr>
-        <tr><td><code>Invite has expired</code></td><td>Discord invite is not permanent — user needs to create a non-expiring invite</td></tr>
-        <tr><td><code>npub not found in server name or description</code></td><td>Discord server exists but name/description don't contain the npub</td></tr>
-        <tr><td><code>Pubkey does not match NIP-05 registration</code></td><td>The domain's nostr.json has a different pubkey for this name</td></tr>
-      </table>
     </section>
 
     <section id="rate-limits">
-      <h2>Rate Limits</h2>
+      <h2>Rate Limits &amp; Caching</h2>
       <table>
         <tr><th>Scope</th><th>Limit</th><th>Window</th></tr>
-        <tr><td>Per IP address</td><td>60 requests</td><td>1 minute</td></tr>
+        <tr><td>Per IP</td><td>60 requests</td><td>1 minute</td></tr>
         <tr><td>Per pubkey</td><td>20 verifications</td><td>1 minute</td></tr>
         <tr><td>Per platform</td><td>30 outbound fetches</td><td>1 minute</td></tr>
         <tr><td>Batch max</td><td>10 claims</td><td>per request</td></tr>
       </table>
-      <p>When rate-limited, the API returns <code>429 Too Many Requests</code>. Cached results do not count against rate limits.</p>
-    </section>
-
-    <section id="caching">
-      <h2>Caching</h2>
-      <p>Results are cached in Cloudflare KV to reduce outbound requests and improve response times.</p>
-      <table>
-        <tr><th>Result Type</th><th>Cache TTL</th></tr>
-        <tr><td>Verified claim</td><td>24 hours</td></tr>
-        <tr><td>Failed verification</td><td>15 minutes</td></tr>
-        <tr><td>Platform error (upstream down)</td><td>5 minutes</td></tr>
-        <tr><td>OAuth verification</td><td>24 hours</td></tr>
-      </table>
-      <p>Cached responses include <code>"cached": true</code> in the response body. The <code>checked_at</code> timestamp reflects when the original verification was performed.</p>
-    </section>
-
-    <section id="integration">
-      <h2>Integration with divine-web</h2>
-      <p>To use this service from a divine-web frontend:</p>
-
-      <h4>1. Set environment variable</h4>
-      <pre>VITE_VERIFICATION_SERVICE_URL=${origin}</pre>
-
-      <h4>2. Enable the feature flag</h4>
-      <pre>localStorage.setItem('divine_feature_useVerificationService', 'true')</pre>
-
-      <h4>3. Health check (on startup)</h4>
-      <pre>const resp = await fetch('${origin}/api/health', { method: 'HEAD' })
-const isAvailable = resp.ok  <span class="comment">// true if service is up</span></pre>
-
-      <h4>4. Verify a claim</h4>
-      <pre>const resp = await fetch('${origin}/api/verify', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    platform: 'github',       <span class="comment">// from NIP-39 i-tag</span>
-    identity: 'octocat',      <span class="comment">// from NIP-39 i-tag</span>
-    proof: 'aa5a315d61ae9438', <span class="comment">// from NIP-39 i-tag</span>
-    pubkey: '7e7e9c42a91b...', <span class="comment">// event author hex pubkey</span>
-  }),
-})
-const result = await resp.json()
-<span class="comment">// result.verified === true | false</span>
-<span class="comment">// result.error === 'reason...' (if false)</span></pre>
-
-      <h4>5. Verify NIP-05</h4>
-      <pre>const name = '_@divine.video'  <span class="comment">// from user's kind-0 nip05 field</span>
-const pubkey = '7e7e9c42...'   <span class="comment">// event author hex pubkey</span>
-const resp = await fetch(
-  \`${origin}/nip05/verify?name=\${encodeURIComponent(name)}&pubkey=\${pubkey}\`
-)
-const result = await resp.json()
-<span class="comment">// result.verified === true | false</span></pre>
-    </section>
-
-    <section id="nostr">
-      <h2>NIP-39 Identity Tag Format</h2>
-      <p>This service verifies claims that are published as <a href="https://github.com/nostr-protocol/nips/blob/master/39.md">NIP-39</a> <code>i</code> tags on Nostr kind-0 (profile metadata) events:</p>
-      <pre><span class="comment">// Nostr kind-0 event tags:</span>
-["i", "github:octocat", "aa5a315d61ae9438b18d"]
-["i", "twitter:jack", "1234567890"]
-["i", "mastodon:mastodon.social/@alice", "109876543210"]
-["i", "telegram:alice", "mygroup/42"]
-["i", "bluesky:alice.bsky.social", "3k2la7k"]
-["i", "discord:alice", "AbCdEf"]</pre>
-      <p>Each tag is <code>["i", "{platform}:{identity}", "{proof}"]</code>. The <code>pubkey</code> is the event author's public key.</p>
+      <p style="margin-top:0.75rem;">Verified claims are cached for 24 hours, failures for 15 minutes, platform errors for 5 minutes.</p>
     </section>
 
     <script>
