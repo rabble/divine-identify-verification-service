@@ -86,6 +86,22 @@ describe('validateClaim', () => {
     expect(result).not.toBeNull()
     expect(result!.error).toContain('platform')
   })
+
+  it('allows missing proof for bluesky claims', () => {
+    const result = validateClaim({
+      ...validClaim,
+      platform: 'bluesky' as const,
+      identity: 'alice.bsky.social',
+      proof: '',
+    }, 0)
+    expect(result).toBeNull()
+  })
+
+  it('requires proof for non-bluesky claims', () => {
+    const result = validateClaim({ ...validClaim, platform: 'twitter' as const, proof: '' }, 0)
+    expect(result).not.toBeNull()
+    expect(result!.error).toContain('proof')
+  })
 })
 
 describe('validateNip05Name', () => {

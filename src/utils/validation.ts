@@ -69,6 +69,10 @@ export function validateClaim(claim: VerifyClaim, index: number): ValidationErro
   if (!claim.identity || !isValidIdentity(claim.identity)) {
     return { index, error: 'Invalid identity' }
   }
+  // Bluesky can verify via OAuth + identity-link records without a proof post ID.
+  if (claim.platform === 'bluesky' && (!claim.proof || claim.proof.trim() === '')) {
+    return null
+  }
   if (!claim.proof || !isValidProof(claim.proof)) {
     return { index, error: 'Invalid proof' }
   }

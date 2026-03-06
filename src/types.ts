@@ -1,3 +1,5 @@
+import type { VerificationMethod, VerificationProvenance } from './identity-link'
+
 export type Bindings = {
   CACHE_KV: KVNamespace
   RATE_LIMIT_KV: KVNamespace
@@ -53,6 +55,8 @@ export interface VerifyResult {
   identity: string
   verified: boolean
   error?: string
+  method?: VerificationMethod
+  provenance?: VerificationProvenance
   checked_at: number
   cached: boolean
 }
@@ -60,6 +64,8 @@ export interface VerifyResult {
 export interface CachedResult {
   verified: boolean
   error?: string
+  method?: VerificationMethod
+  provenance?: VerificationProvenance
   checked_at: number
   type: 'verified' | 'failed' | 'platform_error'
 }

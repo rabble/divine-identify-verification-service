@@ -9,37 +9,75 @@ describe('BlueskyVerifier', () => {
     vi.restoreAllMocks()
   })
 
-  it('returns verified when npub found in post from correct author', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        thread: {
-          post: {
-            author: { handle: 'alice.bsky.social', did: 'did:plc:abc123' },
-            record: { text: `Verifying my nostr key: ${npub}` },
+  it('returns verified when identity-link record matches npub', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          records: [{
+            uri: 'at://did:plc:abc123/video.divine.identity.link/nostr-npub',
+            value: {
+              $type: 'video.divine.identity.link',
+              version: 1,
+              target: { protocol: 'nostr', id: npub },
+              proof: { type: 'oauth', createdAt: '2026-03-06T00:00:00.000Z' },
+            },
+          }],
+        }),
+      })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await verifier.verify('alice.bsky.social', '', npub)
+    expect(result.verified).toBe(true)
+    expect(result.method).toBe('identity_link')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('falls back to proof post and verifies when npub found in correct author post', async () => {
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ records: [] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          thread: {
+            post: {
+              author: { handle: 'alice.bsky.social', did: 'did:plc:abc123' },
+              record: { text: `Verifying my nostr key: ${npub}` },
+            },
           },
-        },
-      }),
-    }))
+        }),
+      }))
 
     const result = await verifier.verify('alice.bsky.social', 'abc123rkey', npub)
     expect(result.verified).toBe(true)
+    expect(result.method).toBe('proof_post')
   })
 
   it('returns not verified when author does not match', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        thread: {
-          post: {
-            author: { handle: 'bob.bsky.social', did: 'did:plc:other' },
-            record: { text: `Verifying my nostr key: ${npub}` },
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ records: [] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          thread: {
+            post: {
+              author: { handle: 'bob.bsky.social', did: 'did:plc:other' },
+              record: { text: `Verifying my nostr key: ${npub}` },
+            },
           },
-        },
-      }),
-    }))
+        }),
+      }))
 
     const result = await verifier.verify('alice.bsky.social', 'abc123rkey', npub)
     expect(result.verified).toBe(false)
@@ -47,32 +85,39 @@ describe('BlueskyVerifier', () => {
   })
 
   it('returns not verified when npub missing', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        thread: {
-          post: {
-            author: { handle: 'alice.bsky.social' },
-            record: { text: 'Just a regular post' },
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ records: [] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          thread: {
+            post: {
+              author: { handle: 'alice.bsky.social' },
+              record: { text: 'Just a regular post' },
+            },
           },
-        },
-      }),
-    }))
+        }),
+      }))
 
     const result = await verifier.verify('alice.bsky.social', 'abc123rkey', npub)
     expect(result.verified).toBe(false)
     expect(result.error).toContain('npub not found')
   })
 
-  it('returns error for not found', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: false,
-      status: 400,
+  it('returns error for missing identity link and missing post proof', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ records: [] }),
     }))
 
-    const result = await verifier.verify('alice.bsky.social', 'badid', npub)
+    const result = await verifier.verify('alice.bsky.social', '', npub)
     expect(result.verified).toBe(false)
-    expect(result.error).toContain('not found')
+    expect(result.error).toContain('no Bluesky post proof')
   })
 })
