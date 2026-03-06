@@ -5,7 +5,10 @@ import { getPlatformInfo } from '../platforms/registry'
 const platforms = new Hono<{ Bindings: Bindings }>()
 
 platforms.get('/', (c) => {
-  return c.json({ platforms: getPlatformInfo() })
+  return c.json({ platforms: getPlatformInfo({
+    youtubeEnabled: !!c.env.YOUTUBE_API_KEY,
+    tiktokEnabled: true, // TikTok oEmbed is public
+  }) })
 })
 
 export default platforms
