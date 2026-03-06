@@ -72,11 +72,13 @@ app.get('/', (c) => {
   const ttTableRow = hasTikTok ? '<tr><td><code>tiktok</code></td><td>Username (without @)</td><td>Video ID (numeric)</td><td>Yes</td></tr>' : ''
   const extraPlatformNames = (hasYouTube ? ', YouTube' : '') + (hasTikTok ? ', TikTok' : '')
   const extraPlatformCodes = (hasYouTube ? ', <code>youtube</code>' : '') + (hasTikTok ? ', <code>tiktok</code>' : '')
-  const ytOAuthExample = hasYouTube ? `\nGET ${origin}/auth/youtube/start?pubkey=hex64&amp;return_url=https://divine.video/settings` : ''
-  const ttOAuthExample = hasTikTok ? `\nGET ${origin}/auth/tiktok/start?pubkey=hex64&amp;return_url=https://divine.video/settings` : ''
+  const ytOAuthInlineExample = hasYouTube ? `\nGET ${origin}/auth/youtube/start?pubkey=hex64&amp;return_url=${origin}/#verify-here` : ''
+  const ttOAuthInlineExample = hasTikTok ? `\nGET ${origin}/auth/tiktok/start?pubkey=hex64&amp;return_url=${origin}/#verify-here` : ''
   const extraLookupPlatforms = (hasYouTube ? ",'youtube'" : '') + (hasTikTok ? ",'tiktok'" : '')
   const choosePlatforms = `Choose Twitter, GitHub, Bluesky, Mastodon, Telegram, Discord${extraPlatformNames}.`
   const noPostingPlatforms = `No posting required for Twitter${extraPlatformNames}, and Bluesky.`
+  const oauthPlatformOptions = `<option value="twitter">Twitter / X</option><option value="bluesky">Bluesky</option>${hasYouTube ? '<option value="youtube">YouTube</option>' : ''}${hasTikTok ? '<option value="tiktok">TikTok</option>' : ''}`
+  const proofPlatformOptions = `<option value="github">GitHub</option><option value="twitter">Twitter / X</option><option value="bluesky">Bluesky</option><option value="mastodon">Mastodon</option><option value="telegram">Telegram</option><option value="discord">Discord</option>${hasYouTube ? '<option value="youtube">YouTube</option>' : ''}${hasTikTok ? '<option value="tiktok">TikTok</option>' : ''}`
 
   return c.html(`<!DOCTYPE html>
 <html lang="en">
@@ -279,8 +281,8 @@ app.get('/', (c) => {
       <div class="steps">
         <div class="step">
           <div class="step-number">1</div>
-          <h4>Sign in with Nostr</h4>
-          <p>Start at <a href="https://login.divine.video">login.divine.video</a>, then open <a href="https://divine.video/settings">divine.video/settings</a> to manage your verifications.</p>
+          <h4>Use the form below</h4>
+          <p>Scroll to <a href="#verify-here">Verify Here</a> and enter your Nostr pubkey once (hex or npub).</p>
         </div>
         <div class="step">
           <div class="step-number">2</div>
@@ -290,7 +292,7 @@ app.get('/', (c) => {
         <div class="step">
           <div class="step-number">3</div>
           <h4>Connect your account</h4>
-          <p>For Twitter and Bluesky, just log in. For others, post a short message that includes your unique key.</p>
+          <p>For Twitter and Bluesky, start OAuth right here. For other platforms, paste your identity + proof and verify directly.</p>
         </div>
         <div class="step">
           <div class="step-number">4</div>
@@ -301,6 +303,49 @@ app.get('/', (c) => {
 
       <div class="note">
         <strong>${noPostingPlatforms}</strong> Just sign in with your account and we'll confirm it's yours. For other platforms, you post a short proof message &mdash; you can delete it afterward if you want, though it's better to keep it up.
+      </div>
+    </section>
+
+    <section id="verify-here" style="border:2px solid #2b6cb0;">
+      <h2>Verify Here</h2>
+      <p>Do verification setup directly on this page. Start OAuth links or run a proof check without leaving Verifyer.</p>
+
+      <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:1rem;">
+        <input id="verify-pubkey-input" type="text" placeholder="Your npub1... or 64-char hex pubkey" style="flex:1;min-width:280px;padding:0.6rem 0.75rem;border:2px solid #e2e8f0;border-radius:8px;font-size:0.95rem;font-family:inherit;outline:none;transition:border-color 0.2s;" onfocus="this.style.borderColor='#2b6cb0'" onblur="this.style.borderColor='#e2e8f0'">
+      </div>
+      <div id="verify-global-status" style="display:none;padding:0.5rem 0.75rem;border-radius:6px;margin-bottom:0.75rem;font-size:0.85rem;"></div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:1rem;">
+        <div style="background:#f7fafc;border:1px solid #e2e8f0;border-radius:10px;padding:1rem;">
+          <h3 style="margin-top:0;">OAuth Link (No Post)</h3>
+          <p style="margin-bottom:0.75rem;">Twitter/X and Bluesky can be linked by login flow directly.</p>
+          <label style="display:block;font-size:0.8rem;color:#4a5568;margin-bottom:0.25rem;">Platform</label>
+          <select id="oauth-platform-select" style="width:100%;padding:0.55rem;border:2px solid #e2e8f0;border-radius:8px;margin-bottom:0.6rem;">
+            ${oauthPlatformOptions}
+          </select>
+          <div id="oauth-bluesky-handle-wrap" style="display:none;">
+            <label style="display:block;font-size:0.8rem;color:#4a5568;margin-bottom:0.25rem;">Bluesky handle</label>
+            <input id="oauth-bluesky-handle-input" type="text" placeholder="alice.bsky.social" style="width:100%;padding:0.55rem;border:2px solid #e2e8f0;border-radius:8px;margin-bottom:0.6rem;">
+          </div>
+          <button id="oauth-start-btn" style="padding:0.55rem 1rem;background:#2b6cb0;color:white;border:none;border-radius:8px;cursor:pointer;font-weight:600;">Start OAuth Verification</button>
+          <div id="oauth-status" style="display:none;padding:0.5rem 0.75rem;border-radius:6px;margin-top:0.75rem;font-size:0.85rem;"></div>
+        </div>
+
+        <div style="background:#f7fafc;border:1px solid #e2e8f0;border-radius:10px;padding:1rem;">
+          <h3 style="margin-top:0;">Proof Verification</h3>
+          <p style="margin-bottom:0.75rem;">Check an identity claim with <code>/verify/single</code>.</p>
+          <label style="display:block;font-size:0.8rem;color:#4a5568;margin-bottom:0.25rem;">Platform</label>
+          <select id="proof-platform-select" style="width:100%;padding:0.55rem;border:2px solid #e2e8f0;border-radius:8px;margin-bottom:0.6rem;">
+            ${proofPlatformOptions}
+          </select>
+          <label style="display:block;font-size:0.8rem;color:#4a5568;margin-bottom:0.25rem;">Identity</label>
+          <input id="proof-identity-input" type="text" placeholder="e.g. octocat, alice.bsky.social, mastodon.social/@alice" style="width:100%;padding:0.55rem;border:2px solid #e2e8f0;border-radius:8px;margin-bottom:0.6rem;">
+          <label id="proof-label" style="display:block;font-size:0.8rem;color:#4a5568;margin-bottom:0.25rem;">Proof ID</label>
+          <input id="proof-proof-input" type="text" placeholder="e.g. gist id / tweet id / post rkey / status id" style="width:100%;padding:0.55rem;border:2px solid #e2e8f0;border-radius:8px;margin-bottom:0.6rem;">
+          <button id="proof-verify-btn" style="padding:0.55rem 1rem;background:#2f855a;color:white;border:none;border-radius:8px;cursor:pointer;font-weight:600;">Verify Claim</button>
+          <div id="proof-status" style="display:none;padding:0.5rem 0.75rem;border-radius:6px;margin-top:0.75rem;font-size:0.85rem;"></div>
+          <pre id="proof-result" style="display:none;margin-top:0.75rem;"></pre>
+        </div>
       </div>
     </section>
 
@@ -477,8 +522,8 @@ GET ${origin}/verify/mastodon/mastodon.social/@alice/109876543210?pubkey=7e7e...
       <p>Users can verify by logging in instead of posting a proof.</p>
 
       <h3>Start OAuth</h3>
-      <pre>GET ${origin}/auth/twitter/start?pubkey=hex64&amp;return_url=https://divine.video/settings
-GET ${origin}/auth/bluesky/start?pubkey=hex64&amp;handle=alice.bsky.social&amp;return_url=https://divine.video/settings${ytOAuthExample}${ttOAuthExample}</pre>
+      <pre>GET ${origin}/auth/twitter/start?pubkey=hex64&amp;return_url=${origin}/#verify-here
+GET ${origin}/auth/bluesky/start?pubkey=hex64&amp;handle=alice.bsky.social&amp;return_url=${origin}/#verify-here${ytOAuthInlineExample}${ttOAuthInlineExample}</pre>
 
       <h3>Check OAuth Status</h3>
       <pre>GET ${origin}/auth/twitter/status?pubkey=hex64&amp;identity=jack</pre>
@@ -537,6 +582,113 @@ GET ${origin}/auth/bluesky/start?pubkey=hex64&amp;handle=alice.bsky.social&amp;r
       return result.map(b => b.toString(16).padStart(2, '0')).join('');
     }
 
+    function setStatus(elId, msg, type) {
+      const el = document.getElementById(elId);
+      if (!el) return;
+      el.style.display = 'block';
+      el.textContent = msg;
+      el.style.background = type === 'error' ? '#fed7d7' : type === 'loading' ? '#fefcbf' : '#c6f6d5';
+      el.style.color = type === 'error' ? '#c53030' : type === 'loading' ? '#975a16' : '#276749';
+    }
+
+    function clearStatus(elId) {
+      const el = document.getElementById(elId);
+      if (el) el.style.display = 'none';
+    }
+
+    function normalizePubkeyInput(raw) {
+      const input = (raw || '').trim();
+      if (!input) throw new Error('Enter your Nostr pubkey first (npub or hex).');
+      if (input.startsWith('npub1')) return npubToHex(input);
+      if (/^[0-9a-f]{64}$/i.test(input)) return input.toLowerCase();
+      throw new Error('Pubkey must be npub1... or 64-char hex.');
+    }
+
+    function updateOAuthInputs() {
+      const platform = document.getElementById('oauth-platform-select').value;
+      const wrap = document.getElementById('oauth-bluesky-handle-wrap');
+      wrap.style.display = platform === 'bluesky' ? 'block' : 'none';
+    }
+
+    function updateProofInputs() {
+      const platform = document.getElementById('proof-platform-select').value;
+      const label = document.getElementById('proof-label');
+      const input = document.getElementById('proof-proof-input');
+      if (platform === 'bluesky') {
+        label.textContent = 'Proof ID (optional with OAuth/link record)';
+        input.placeholder = 'Optional: post rkey if you want proof-post fallback';
+      } else {
+        label.textContent = 'Proof ID';
+        input.placeholder = 'e.g. gist id / tweet id / post rkey / status id';
+      }
+    }
+
+    function startOAuthVerification() {
+      try {
+        clearStatus('verify-global-status');
+        clearStatus('oauth-status');
+        const pubkey = normalizePubkeyInput(document.getElementById('verify-pubkey-input').value);
+        const platform = document.getElementById('oauth-platform-select').value;
+        const params = new URLSearchParams({
+          pubkey,
+          return_url: window.location.origin + window.location.pathname + '#verify-here',
+        });
+        if (platform === 'bluesky') {
+          const handle = document.getElementById('oauth-bluesky-handle-input').value.trim();
+          if (!handle) throw new Error('Bluesky handle is required for Bluesky OAuth.');
+          params.set('handle', handle);
+        }
+        window.location.href = API + '/auth/' + platform + '/start?' + params.toString();
+      } catch (e) {
+        setStatus('oauth-status', e.message || 'Failed to start OAuth', 'error');
+      }
+    }
+
+    async function verifySingleHere() {
+      const resultEl = document.getElementById('proof-result');
+      resultEl.style.display = 'none';
+      try {
+        clearStatus('verify-global-status');
+        clearStatus('proof-status');
+        const pubkey = normalizePubkeyInput(document.getElementById('verify-pubkey-input').value);
+        const platform = document.getElementById('proof-platform-select').value;
+        const identity = document.getElementById('proof-identity-input').value.trim();
+        const proof = document.getElementById('proof-proof-input').value.trim();
+        if (!identity) throw new Error('Identity is required.');
+        if (platform !== 'bluesky' && !proof) throw new Error('Proof ID is required for this platform.');
+
+        setStatus('proof-status', 'Verifying claim...', 'loading');
+        const resp = await fetch(API + '/verify/single', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ platform, identity, proof, pubkey }),
+        });
+        const data = await resp.json();
+        if (!resp.ok || data.error) {
+          setStatus('proof-status', data.error || 'Verification failed', 'error');
+        } else if (data.verified) {
+          setStatus('proof-status', 'Verified', 'ok');
+        } else {
+          setStatus('proof-status', data.error || 'Not verified', 'error');
+        }
+        resultEl.textContent = JSON.stringify(data, null, 2);
+        resultEl.style.display = 'block';
+      } catch (e) {
+        setStatus('proof-status', e.message || 'Verification failed', 'error');
+      }
+    }
+
+    function handleOAuthCallbackMessage() {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('oauth_verified') === 'true') {
+        const platform = params.get('platform') || 'unknown';
+        const identity = params.get('identity') || '';
+        setStatus('verify-global-status', 'OAuth linked for ' + platform + (identity ? ' as ' + identity : ''), 'ok');
+      } else if (params.get('oauth_error')) {
+        setStatus('verify-global-status', 'OAuth error: ' + params.get('oauth_error'), 'error');
+      }
+    }
+
     function showStatus(msg, type) {
       const el = document.getElementById('lookup-status');
       el.style.display = 'block';
@@ -545,9 +697,7 @@ GET ${origin}/auth/bluesky/start?pubkey=hex64&amp;handle=alice.bsky.social&amp;r
       el.style.color = type === 'error' ? '#c53030' : type === 'loading' ? '#975a16' : '#276749';
     }
 
-    function hideStatus() {
-      document.getElementById('lookup-status').style.display = 'none';
-    }
+    function hideStatus() { clearStatus('lookup-status'); }
 
     function renderResults(results, pubkey) {
       const el = document.getElementById('lookup-results');
@@ -728,7 +878,19 @@ GET ${origin}/auth/bluesky/start?pubkey=hex64&amp;handle=alice.bsky.social&amp;r
       });
     }
 
-    // Handle Enter key
+    // Verify Here wiring
+    document.getElementById('oauth-platform-select').addEventListener('change', updateOAuthInputs);
+    document.getElementById('proof-platform-select').addEventListener('change', updateProofInputs);
+    document.getElementById('oauth-start-btn').addEventListener('click', startOAuthVerification);
+    document.getElementById('proof-verify-btn').addEventListener('click', verifySingleHere);
+    document.getElementById('verify-pubkey-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') startOAuthVerification();
+    });
+    updateOAuthInputs();
+    updateProofInputs();
+    handleOAuthCallbackMessage();
+
+    // Lookup tool Enter key
     document.getElementById('lookup-input').addEventListener('keydown', (e) => {
       if (e.key === 'Enter') doLookup();
     });
