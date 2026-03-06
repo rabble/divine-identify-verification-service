@@ -455,7 +455,7 @@ app.get('/', (c) => {
           <h3 style="margin-top:0;">Sign in with your Nostr account</h3>
           <p>Use your signer/extension. This lets us publish the final verification tag into your Nostr profile (kind 0).</p>
           <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.6rem;">
-            <button id="connect-nostr-btn" class="verify-btn verify-btn-primary" type="button">Connect Nostr signer</button>
+            <button id="connect-nostr-btn" class="verify-btn verify-btn-primary" type="button">Login with Nostr</button>
             <a href="${divineLoginUrl}" target="_blank" rel="noopener noreferrer" class="btn btn-outline" style="padding:0.52rem 0.85rem;border-radius:8px;font-size:0.9rem;">Open login.divine.video</a>
           </div>
           <label for="verify-pubkey-input" class="field-label">Account (auto-filled after login; manual paste fallback)</label>
@@ -849,19 +849,47 @@ GET ${origin}/auth/bluesky/start?pubkey=hex64&amp;handle=alice.bsky.social&amp;r
     async function connectNostrSigner() {
       clearStatus('verify-login-status');
       try {
-        setButtonLoading('connect-nostr-btn', true, 'Connecting...');
-        if (!window.nostr || typeof window.nostr.getPublicKey !== 'function') {
+        setButtonLoading('connect-nostr-btn', true, 'Signing in...');
+        if (!window.nostr || typeof window.nostr.signEvent !== 'function') {
           throw new Error('No Nostr signer found. Install a signer extension or use login.divine.video.');
         }
-        const pubkey = await window.nostr.getPublicKey();
-        if (!pubkey || !/^[0-9a-f]{64}$/i.test(pubkey)) {
-          throw new Error('Signer returned an invalid key.');
+
+        const loginUrl = 'https://login.divine.video/api/auth/login';
+        const unsignedEvent = {
+          kind: 27235,
+          content: '',
+          created_at: Math.floor(Date.now() / 1000),
+          tags: [
+            ['u', loginUrl],
+            ['method', 'POST'],
+          ],
+        };
+
+        setStatus('verify-login-status', 'Requesting signature from your signer...', 'loading');
+        const signedEvent = await window.nostr.signEvent(unsignedEvent);
+        if (!signedEvent || typeof signedEvent !== 'object') {
+          throw new Error('Signer did not return a valid login event.');
         }
+
+        setStatus('verify-login-status', 'Verifying login with login.divine.video...', 'loading');
+        const resp = await fetch(API + '/auth/nostr/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ event: signedEvent }),
+        });
+        const data = await resp.json();
+        if (!resp.ok || !data || !data.pubkey) {
+          throw new Error((data && data.error) || 'Nostr login failed.');
+        }
+
+        const pubkey = String(data.pubkey).toLowerCase();
+        if (!/^[0-9a-f]{64}$/i.test(pubkey)) throw new Error('Login returned an invalid pubkey.');
+
         signerPubkeyHex = pubkey.toLowerCase();
         setAccountInputValue(signerPubkeyHex);
-        setStatus('verify-login-status', 'Connected. You are signed in with your Nostr account.', 'ok');
+        setStatus('verify-login-status', 'Signed in with Nostr via login.divine.video.', 'ok');
       } catch (e) {
-        setStatus('verify-login-status', e.message || 'Could not connect signer.', 'error');
+        setStatus('verify-login-status', e.message || 'Could not sign in with Nostr.', 'error');
       } finally {
         setButtonLoading('connect-nostr-btn', false, '');
       }
@@ -1221,7 +1249,7 @@ GET ${origin}/auth/bluesky/start?pubkey=hex64&amp;handle=alice.bsky.social&amp;r
         setStatus('publish-status', 'Checking signer and profile...', 'loading');
 
         if (!window.nostr || typeof window.nostr.signEvent !== 'function') {
-          throw new Error('A Nostr signer is required to publish. Click "Connect Nostr signer" first.');
+          throw new Error('A Nostr signer is required to publish. Click "Login with Nostr" first.');
         }
 
         const activePubkey = await getActivePubkey();
