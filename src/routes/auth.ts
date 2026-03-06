@@ -9,11 +9,13 @@ import { startYouTubeOAuth, handleYouTubeCallback } from '../oauth/youtube'
 import { startTikTokOAuth, handleTikTokCallback } from '../oauth/tiktok'
 
 const auth = new Hono<{ Bindings: Bindings }>()
+const DIVINE_LOGIN_BASE = 'https://login.divine.video'
 
 // Allowed origins for OAuth return_url (prevent open redirect)
 const ALLOWED_RETURN_ORIGINS = new Set([
   'https://divine.video',
   'https://www.divine.video',
+  'https://verifyer.divine.video',
   'https://verifier.divine.video',
 ])
 
@@ -52,6 +54,87 @@ function buildReturnUrl(returnUrl: string, params: Record<string, string>): stri
 auth.get('/bluesky/client-metadata.json', (c) => {
   const baseUrl = c.env.OAUTH_REDIRECT_BASE || new URL(c.req.url).origin
   return c.json(blueskyClientMetadata(baseUrl))
+})
+
+// Nostr login via login.divine.video (NIP-98 signed event passthrough)
+// POST /auth/nostr/login { event: { ...nostr event... } }
+auth.post('/nostr/login', async (c) => {
+  const clientIp = c.req.header('cf-connecting-ip') || 'unknown'
+  const ipLimit = await checkRateLimit(c.env.RATE_LIMIT_KV, RATE_LIMITS.ip, clientIp)
+  if (!ipLimit.allowed) {
+    return c.json({ error: 'Rate limit exceeded' }, 429)
+  }
+
+  let body: { event?: unknown }
+  try {
+    body = await c.req.json()
+  } catch {
+    return c.json({ error: 'Invalid JSON body' }, 400)
+  }
+
+  const event = body.event as
+    | { id?: unknown; pubkey?: unknown; sig?: unknown; kind?: unknown; tags?: unknown; created_at?: unknown; content?: unknown }
+    | undefined
+  if (!event || typeof event !== 'object') {
+    return c.json({ error: 'Missing event payload' }, 400)
+  }
+  if (typeof event.id !== 'string' || typeof event.pubkey !== 'string' || typeof event.sig !== 'string') {
+    return c.json({ error: 'Invalid event: id/pubkey/sig are required' }, 400)
+  }
+  if (!isValidHexPubkey(event.pubkey)) {
+    return c.json({ error: 'Invalid event pubkey' }, 400)
+  }
+  if (event.kind !== 27235) {
+    return c.json({ error: 'Invalid event kind: expected 27235 (NIP-98)' }, 400)
+  }
+  if (!Array.isArray(event.tags)) {
+    return c.json({ error: 'Invalid event tags' }, 400)
+  }
+
+  const loginUrl = `${DIVINE_LOGIN_BASE}/api/auth/login`
+  const encodedEvent = btoa(JSON.stringify(event))
+
+  let upstreamResp: Response
+  try {
+    upstreamResp = await fetch(loginUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Nostr ${encodedEvent}`,
+        'Content-Type': 'application/json',
+        // login.divine.video currently whitelists divine.video origin for this endpoint.
+        'Origin': 'https://divine.video',
+      },
+      body: '{}',
+    })
+  } catch {
+    return c.json({ error: 'Failed to reach login.divine.video' }, 502)
+  }
+
+  let upstreamData: { pubkey?: string; error?: string } = {}
+  try {
+    upstreamData = await upstreamResp.json() as typeof upstreamData
+  } catch {
+    // Keep empty object fallback.
+  }
+
+  if (!upstreamResp.ok) {
+    return c.json({
+      error: upstreamData.error || 'Nostr login failed at login.divine.video',
+      upstream_status: upstreamResp.status,
+    }, 502)
+  }
+
+  const upstreamPubkey = typeof upstreamData.pubkey === 'string' ? upstreamData.pubkey : event.pubkey
+  if (!isValidHexPubkey(upstreamPubkey)) {
+    return c.json({ error: 'Invalid pubkey returned by login provider' }, 502)
+  }
+
+  return c.json({
+    authenticated: true,
+    pubkey: normalizePubkey(upstreamPubkey),
+    provider: 'login.divine.video',
+    method: 'nostr_nip98',
+  })
 })
 
 // Start OAuth flow

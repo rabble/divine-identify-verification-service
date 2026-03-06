@@ -23,15 +23,20 @@ export function getVerifier(platform: Platform, githubToken?: string, youtubeApi
   }
 }
 
-export function getPlatformInfo(): Record<Platform, PlatformInfo> {
-  return {
+export function getPlatformInfo(opts?: { youtubeEnabled?: boolean; tiktokEnabled?: boolean }): Record<string, PlatformInfo> {
+  const platforms: Record<string, PlatformInfo> = {
     github: { label: 'GitHub', supported: true },
     twitter: { label: 'Twitter / X', supported: true },
     mastodon: { label: 'Mastodon', supported: true },
     telegram: { label: 'Telegram', supported: true },
     bluesky: { label: 'Bluesky', supported: true },
     discord: { label: 'Discord', supported: true },
-    youtube: { label: 'YouTube', supported: true },
-    tiktok: { label: 'TikTok', supported: true },
   }
+  if (opts?.youtubeEnabled) {
+    platforms.youtube = { label: 'YouTube', supported: true }
+  }
+  if (opts?.tiktokEnabled) {
+    platforms.tiktok = { label: 'TikTok', supported: true }
+  }
+  return platforms
 }

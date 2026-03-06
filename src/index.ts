@@ -20,6 +20,7 @@ app.use('*', cors({
   origin: [
     'https://divine.video',
     'https://www.divine.video',
+    'https://verifyer.divine.video',
     'https://verifier.divine.video',
     'http://localhost:5173',
     'http://localhost:3000',
@@ -62,13 +63,32 @@ app.get('/', (c) => {
   }
 
   const origin = new URL(c.req.url).origin
+  const hasYouTube = !!c.env.YOUTUBE_API_KEY
+  const hasTikTok = true // TikTok oEmbed is public, no key needed for proof verification
+  const divineLoginUrl = `https://login.divine.video/login?return_url=${encodeURIComponent(`${origin}/#verify-here`)}`
+
+  // Pre-build conditional HTML to avoid TS2590 (template literal union too complex)
+  const ytPill = hasYouTube ? '<div class="platform-pill"><svg viewBox="0 0 24 24" fill="#333"><path d="M23.498 6.186a3.016 3.016 0 00-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 00.502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 002.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 002.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg> YouTube</div>' : ''
+  const ttPill = hasTikTok ? '<div class="platform-pill"><svg viewBox="0 0 24 24" fill="#333"><path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.75-.08 1.4-.54 2.79-1.35 3.94-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.19-3.44-3.37-3.65-5.71-.02-.5-.03-1-.01-1.49.18-1.9 1.12-3.72 2.58-4.96 1.66-1.44 3.98-2.13 6.15-1.72.02 1.48-.04 2.96-.04 4.44-.99-.32-2.15-.23-3.02.37-.63.41-1.11 1.04-1.36 1.75-.21.51-.15 1.07-.14 1.61.24 1.64 1.82 3.02 3.5 2.87 1.12-.01 2.19-.66 2.77-1.61.19-.33.4-.67.41-1.06.1-1.79.06-3.57.07-5.36.01-4.03-.01-8.05.02-12.07z"/></svg> TikTok</div>' : ''
+  const ytTableRow = hasYouTube ? '<tr><td><code>youtube</code></td><td>Channel ID (<code>UCxxxx</code>) or handle (<code>@user</code>)</td><td>Video ID (11 chars)</td><td>Yes</td></tr>' : ''
+  const ttTableRow = hasTikTok ? '<tr><td><code>tiktok</code></td><td>Username (without @)</td><td>Video ID (numeric)</td><td>Yes</td></tr>' : ''
+  const extraPlatformNames = (hasYouTube ? ', YouTube' : '') + (hasTikTok ? ', TikTok' : '')
+  const extraPlatformCodes = (hasYouTube ? ', <code>youtube</code>' : '') + (hasTikTok ? ', <code>tiktok</code>' : '')
+  const ytOAuthInlineExample = hasYouTube ? `\nGET ${origin}/auth/youtube/start?pubkey=hex64&amp;return_url=${origin}/#verify-here` : ''
+  const ttOAuthInlineExample = hasTikTok ? `\nGET ${origin}/auth/tiktok/start?pubkey=hex64&amp;return_url=${origin}/#verify-here` : ''
+  const extraLookupPlatforms = (hasYouTube ? ",'youtube'" : '') + (hasTikTok ? ",'tiktok'" : '')
+  const choosePlatforms = `Choose Twitter, GitHub, Bluesky, Mastodon, Telegram, Discord${extraPlatformNames}.`
+  const noPostingPlatforms = `No posting required for Twitter${extraPlatformNames}, and Bluesky.`
+  const oauthPlatformOptions = `<option value="twitter">Twitter / X</option><option value="bluesky">Bluesky</option>${hasYouTube ? '<option value="youtube">YouTube</option>' : ''}${hasTikTok ? '<option value="tiktok">TikTok</option>' : ''}`
+  const proofPlatformOptions = `<option value="github">GitHub</option><option value="twitter">Twitter / X</option><option value="bluesky">Bluesky</option><option value="mastodon">Mastodon</option><option value="telegram">Telegram</option><option value="discord">Discord</option>${hasYouTube ? '<option value="youtube">YouTube</option>' : ''}${hasTikTok ? '<option value="tiktok">TikTok</option>' : ''}`
+
   return c.html(`<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Divine Identity Verification — Prove You Are Who You Say You Are</title>
-  <meta name="description" content="Verify your identity across platforms. Link your Twitter, GitHub, Bluesky, Mastodon, YouTube, TikTok, and more to your Nostr profile to prevent impersonation and build trust.">
+  <meta name="description" content="Verify your identity across platforms. Link your Twitter, GitHub, Bluesky, Mastodon, and more to your Nostr profile to prevent impersonation and build trust.">
   <meta property="og:title" content="Divine Identity Verification">
   <meta property="og:description" content="Prove you are who you say you are. Link your social accounts to your Nostr identity to prevent impersonation.">
   <meta property="og:type" content="website">
@@ -188,6 +208,143 @@ app.get('/', (c) => {
       content: ''; display: block; height: 1px; background: #e2e8f0;
       position: relative; top: 0.7rem;
     }
+
+    /* Verify flow */
+    .verify-here {
+      border: 2px solid #2b6cb0;
+      background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
+    }
+    .verify-lead {
+      font-size: 1rem;
+      color: #2d3748;
+      margin-bottom: 1rem;
+    }
+    .verify-step-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1rem;
+    }
+    .verify-card {
+      background: white;
+      border: 1px solid #dbe7f5;
+      border-radius: 12px;
+      padding: 1rem;
+    }
+    .step-pill {
+      display: inline-block;
+      background: #ebf8ff;
+      color: #2b6cb0;
+      border-radius: 999px;
+      padding: 0.25rem 0.65rem;
+      font-size: 0.75rem;
+      font-weight: 700;
+      margin-bottom: 0.6rem;
+    }
+    .field-label {
+      display: block;
+      font-size: 0.82rem;
+      color: #4a5568;
+      margin-bottom: 0.25rem;
+      font-weight: 600;
+    }
+    .field-input,
+    .field-select {
+      width: 100%;
+      padding: 0.62rem 0.72rem;
+      border: 2px solid #e2e8f0;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      font-family: inherit;
+      margin-bottom: 0.6rem;
+      transition: border-color 0.2s;
+      outline: none;
+      background: #fff;
+    }
+    .field-input:focus,
+    .field-select:focus {
+      border-color: #2b6cb0;
+    }
+    .field-help {
+      color: #718096;
+      font-size: 0.82rem;
+      margin-top: -0.1rem;
+      margin-bottom: 0.55rem;
+    }
+    .status-row {
+      display: none;
+      padding: 0.52rem 0.75rem;
+      border-radius: 8px;
+      margin-top: 0.7rem;
+      font-size: 0.86rem;
+    }
+    .verify-btn {
+      padding: 0.62rem 1rem;
+      border: none;
+      border-radius: 8px;
+      color: white;
+      cursor: pointer;
+      font-size: 0.93rem;
+      font-weight: 700;
+      transition: background 0.2s, opacity 0.2s;
+    }
+    .verify-btn:disabled {
+      cursor: not-allowed;
+      opacity: 0.75;
+    }
+    .verify-btn-primary {
+      background: #2b6cb0;
+    }
+    .verify-btn-primary:hover:not(:disabled) {
+      background: #2c5282;
+    }
+    .verify-btn-success {
+      background: #2f855a;
+    }
+    .verify-btn-success:hover:not(:disabled) {
+      background: #276749;
+    }
+    .advanced-proof {
+      margin-top: 1rem;
+      border: 1px solid #dbe7f5;
+      border-radius: 12px;
+      padding: 0.8rem 0.9rem;
+      background: #fff;
+    }
+    .advanced-proof summary {
+      cursor: pointer;
+      font-weight: 700;
+      color: #2d3748;
+      outline: none;
+    }
+    .advanced-proof-inner {
+      margin-top: 0.8rem;
+    }
+
+    @media (max-width: 640px) {
+      .container {
+        padding: 1rem;
+      }
+      .hero {
+        padding-top: 2rem;
+      }
+      .hero h1 {
+        font-size: 1.9rem;
+      }
+      .verify-card {
+        padding: 0.85rem;
+      }
+      .steps {
+        gap: 0.75rem;
+      }
+      .step {
+        text-align: left;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+      }
+      .step-number {
+        margin-bottom: 0.5rem;
+      }
+    }
   </style>
 </head>
 <body>
@@ -213,7 +370,7 @@ app.get('/', (c) => {
       <div class="value-card">
         <div class="icon">&#9989;</div>
         <h3>Build Trust</h3>
-        <p>When someone finds your Divine profile, they can see that your Twitter, GitHub, Bluesky, YouTube, and other accounts are all confirmed to be you. No guessing, no doubt.</p>
+        <p>When someone finds your Divine profile, they can see that your Twitter, GitHub, Bluesky, and other accounts are all confirmed to be you. No guessing, no doubt.</p>
       </div>
       <div class="value-card">
         <div class="icon">&#127760;</div>
@@ -251,36 +408,30 @@ app.get('/', (c) => {
         <svg viewBox="0 0 24 24" fill="#333"><path d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1569 2.4189z"/></svg>
         Discord
       </div>
-      <div class="platform-pill">
-        <svg viewBox="0 0 24 24" fill="#333"><path d="M23.498 6.186a3.016 3.016 0 00-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 00.502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 002.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 002.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
-        YouTube
-      </div>
-      <div class="platform-pill">
-        <svg viewBox="0 0 24 24" fill="#333"><path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.75-.08 1.4-.54 2.79-1.35 3.94-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.19-3.44-3.37-3.65-5.71-.02-.5-.03-1-.01-1.49.18-1.9 1.12-3.72 2.58-4.96 1.66-1.44 3.98-2.13 6.15-1.72.02 1.48-.04 2.96-.04 4.44-.99-.32-2.15-.23-3.02.37-.63.41-1.11 1.04-1.36 1.75-.21.51-.15 1.07-.14 1.61.24 1.64 1.82 3.02 3.5 2.87 1.12-.01 2.19-.66 2.77-1.61.19-.33.4-.67.41-1.06.1-1.79.06-3.57.07-5.36.01-4.03-.01-8.05.02-12.07z"/></svg>
-        TikTok
-      </div>
+      ${ytPill}
+      ${ttPill}
     </div>
 
     <!-- HOW TO VERIFY -->
     <section id="how-to-verify">
       <h2>How to Get Verified</h2>
-      <p>It takes about a minute. You're basically telling both platforms "these accounts belong to the same person."</p>
+      <p>Most people finish in under a minute. You are just confirming that your Divine account and social account belong to the same person.</p>
 
       <div class="steps">
         <div class="step">
           <div class="step-number">1</div>
-          <h4>Open your Divine settings</h4>
-          <p>Go to <a href="https://divine.video">divine.video</a> and click on your profile settings.</p>
+          <h4>Sign in first</h4>
+          <p>Scroll to <a href="#verify-here">Verify Here</a> and connect your Nostr signer so this app can publish your verified links.</p>
         </div>
         <div class="step">
           <div class="step-number">2</div>
-          <h4>Pick a platform to link</h4>
-          <p>Choose Twitter, GitHub, Bluesky, Mastodon, Telegram, Discord, YouTube, or TikTok.</p>
+          <h4>Pick a platform</h4>
+          <p>${choosePlatforms}</p>
         </div>
         <div class="step">
           <div class="step-number">3</div>
-          <h4>Connect your account</h4>
-          <p>For Twitter and Bluesky, just log in. For others, post a short message that includes your unique key.</p>
+          <h4>Use Quick Connect</h4>
+          <p>For Twitter/X, Bluesky, YouTube, and TikTok, just sign in from this page. No posting required.</p>
         </div>
         <div class="step">
           <div class="step-number">4</div>
@@ -290,8 +441,94 @@ app.get('/', (c) => {
       </div>
 
       <div class="note">
-        <strong>No posting required for Twitter, Bluesky, YouTube, and TikTok.</strong> Just sign in with your account and we'll confirm it's yours. For other platforms, you post a short proof message &mdash; you can delete it afterward if you want, though it's better to keep it up.
+        <strong>${noPostingPlatforms}</strong> For GitHub, Mastodon, Telegram, and Discord, use the advanced section to paste a post/invite link and verify it.
       </div>
+    </section>
+
+    <section id="verify-here" class="verify-here">
+      <h2>Verify Here</h2>
+      <p class="verify-lead">Yes, login is required. Connect your Nostr signer first so verified links can be published to your profile.</p>
+
+      <div class="verify-step-grid">
+        <div class="verify-card">
+          <span class="step-pill">Step 1</span>
+          <h3 style="margin-top:0;">Sign in with your Nostr account</h3>
+          <p>Use your browser signer, login.divine.video session, bunker URL, or Nostr Connect. Any of these lets us publish the final verification tag into your Nostr profile (kind 0).</p>
+          <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.6rem;">
+            <button id="connect-nostr-btn" class="verify-btn verify-btn-primary" type="button">Login with Nostr</button>
+            <button id="connect-keycast-btn" class="verify-btn" type="button">Use login.divine.video</button>
+            <a href="${divineLoginUrl}" target="_blank" rel="noopener noreferrer" class="btn btn-outline" style="padding:0.52rem 0.85rem;border-radius:8px;font-size:0.9rem;">Open login.divine.video</a>
+          </div>
+          <label for="verify-pubkey-input" class="field-label">Account (auto-filled after login; manual paste fallback)</label>
+          <input id="verify-pubkey-input" class="field-input" type="text" placeholder="alice@divine.video or npub1...">
+          <p id="signer-session-summary" class="field-help" style="display:none;"></p>
+          <p class="field-help">If a signer session is not available, you can still paste your Divine address, npub, profile URL, or 64-char key.</p>
+          <details class="advanced-proof" id="remote-signer-details" style="margin-top:0.75rem;">
+            <summary>Remote signer options: bunker and Nostr Connect</summary>
+            <div class="advanced-proof-inner">
+              <p style="margin-bottom:0.75rem;">Paste a bunker URL or bunker NIP-05, or generate a Nostr Connect URI for your signer app.</p>
+              <label for="bunker-input" class="field-label">Bunker URL or bunker NIP-05</label>
+              <input id="bunker-input" class="field-input" type="text" placeholder="bunker://... or signer@example.com">
+              <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.75rem;">
+                <button id="connect-bunker-btn" class="verify-btn" type="button">Connect bunker</button>
+                <button id="start-nostr-connect-btn" class="verify-btn" type="button">Start Nostr Connect</button>
+              </div>
+              <div id="nostr-connect-wrap" style="display:none;margin-top:0.85rem;">
+                <label for="nostr-connect-uri-input" class="field-label">Nostr Connect URI</label>
+                <textarea id="nostr-connect-uri-input" class="field-input" rows="3" readonly style="min-height:6.5rem;resize:vertical;"></textarea>
+                <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.75rem;">
+                  <button id="copy-nostr-connect-btn" class="verify-btn" type="button">Copy URI</button>
+                  <a id="open-nostr-connect-link" class="btn btn-outline" href="#" rel="noopener noreferrer" style="padding:0.52rem 0.85rem;border-radius:8px;font-size:0.9rem;">Open signer app</a>
+                  <button id="cancel-nostr-connect-btn" class="verify-btn" type="button">Cancel</button>
+                </div>
+                <p class="field-help" style="margin-top:0.5rem;">Open this URI in your signer app, or copy it into a bunker / Nostr Connect client.</p>
+              </div>
+            </div>
+          </details>
+          <div id="verify-login-status" class="status-row"></div>
+          <div id="verify-global-status" class="status-row"></div>
+        </div>
+
+        <div class="verify-card">
+          <span class="step-pill">Step 2 (Recommended)</span>
+          <h3 style="margin-top:0;">Quick Connect (no posting)</h3>
+          <p>Sign in with the platform account you want to link.</p>
+          <label for="oauth-platform-select" class="field-label">Platform</label>
+          <select id="oauth-platform-select" class="field-select">
+            ${oauthPlatformOptions}
+          </select>
+          <div id="oauth-bluesky-handle-wrap" style="display:none;">
+            <label for="oauth-bluesky-handle-input" class="field-label">Bluesky handle</label>
+            <input id="oauth-bluesky-handle-input" class="field-input" type="text" placeholder="alice.bsky.social">
+          </div>
+          <button id="oauth-start-btn" class="verify-btn verify-btn-primary" type="button">Continue to secure sign-in</button>
+          <div id="oauth-status" class="status-row"></div>
+        </div>
+      </div>
+
+      <details class="advanced-proof" id="advanced-proof">
+        <summary>Step 3 (Advanced): verify by post/link proof instead</summary>
+        <div class="advanced-proof-inner">
+          <p style="margin-bottom:0.75rem;">Use this only if you do not want Quick Connect. You can paste a full URL and we'll extract IDs where possible.</p>
+          <label for="proof-platform-select" class="field-label">Platform</label>
+          <select id="proof-platform-select" class="field-select">
+            ${proofPlatformOptions}
+          </select>
+          <label for="proof-identity-input" class="field-label">Your account name on that platform</label>
+          <input id="proof-identity-input" class="field-input" type="text" placeholder="e.g. octocat or alice.bsky.social">
+          <label id="proof-label" for="proof-proof-input" class="field-label">Post link or proof ID</label>
+          <input id="proof-proof-input" class="field-input" type="text" placeholder="Paste full post URL or just the ID">
+          <p id="proof-helper" class="field-help">Tip: for Twitter and Bluesky, paste the full post URL.</p>
+          <button id="proof-verify-btn" class="verify-btn verify-btn-success" type="button">Verify this link</button>
+          <div id="proof-status" class="status-row"></div>
+          <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.75rem;">
+            <button id="publish-kind0-btn" class="verify-btn verify-btn-primary" type="button">Publish to Nostr profile</button>
+          </div>
+          <p class="field-help">This writes/updates your identity tag in your signed Nostr kind 0 profile event.</p>
+          <div id="publish-status" class="status-row"></div>
+          <pre id="proof-result" style="display:none;margin-top:0.75rem;"></pre>
+        </div>
+      </details>
     </section>
 
     <!-- HOW IT WORKS -->
@@ -329,7 +566,7 @@ app.get('/', (c) => {
       <p>Two verification methods are supported:</p>
       <ul>
         <li><strong>Proof posts</strong> &mdash; User publishes a post containing their <code>npub</code> on the external platform. The service fetches the post and checks that the npub is present and the author matches.</li>
-        <li><strong>OAuth login</strong> (Twitter, Bluesky, YouTube, TikTok) &mdash; User authenticates directly. No proof post needed.</li>
+        <li><strong>OAuth login</strong> (Twitter, Bluesky${extraPlatformNames}) &mdash; User authenticates directly. No proof post needed.</li>
       </ul>
     </section>
 
@@ -373,18 +610,8 @@ app.get('/', (c) => {
           <td>Invite code</td>
           <td>No</td>
         </tr>
-        <tr>
-          <td><code>youtube</code></td>
-          <td>Channel ID (<code>UCxxxx</code>) or handle (<code>@user</code>)</td>
-          <td>Video ID (11 chars)</td>
-          <td>Yes</td>
-        </tr>
-        <tr>
-          <td><code>tiktok</code></td>
-          <td>Username (without @)</td>
-          <td>Video ID (numeric)</td>
-          <td>Yes</td>
-        </tr>
+        ${ytTableRow}
+        ${ttTableRow}
       </table>
     </section>
 
@@ -405,7 +632,7 @@ Content-Type: application/json
 
       <table>
         <tr><th>Field</th><th>Type</th><th>Description</th></tr>
-        <tr><td><code>platform</code></td><td>string</td><td>One of: <code>github</code>, <code>twitter</code>, <code>bluesky</code>, <code>mastodon</code>, <code>telegram</code>, <code>discord</code>, <code>youtube</code>, <code>tiktok</code></td></tr>
+        <tr><td><code>platform</code></td><td>string</td><td>One of: <code>github</code>, <code>twitter</code>, <code>bluesky</code>, <code>mastodon</code>, <code>telegram</code>, <code>discord</code>${extraPlatformCodes}</td></tr>
         <tr><td><code>identity</code></td><td>string</td><td>Username or handle on the platform</td></tr>
         <tr><td><code>proof</code></td><td>string</td><td>ID of the proof post</td></tr>
         <tr><td><code>pubkey</code></td><td>string</td><td>64-character lowercase hex Nostr public key</td></tr>
@@ -473,19 +700,17 @@ GET ${origin}/verify/mastodon/mastodon.social/@alice/109876543210?pubkey=7e7e...
     </section>
 
     <section id="oauth">
-      <h2>OAuth Verification (Twitter, Bluesky, YouTube, TikTok)</h2>
+      <h2>OAuth Verification (Twitter, Bluesky${extraPlatformNames})</h2>
       <p>Users can verify by logging in instead of posting a proof.</p>
 
       <h3>Start OAuth</h3>
-      <pre>GET ${origin}/auth/twitter/start?pubkey=hex64&amp;return_url=https://divine.video/settings
-GET ${origin}/auth/bluesky/start?pubkey=hex64&amp;handle=alice.bsky.social&amp;return_url=https://divine.video/settings
-GET ${origin}/auth/youtube/start?pubkey=hex64&amp;return_url=https://divine.video/settings
-GET ${origin}/auth/tiktok/start?pubkey=hex64&amp;return_url=https://divine.video/settings</pre>
+      <pre>GET ${origin}/auth/twitter/start?pubkey=hex64&amp;return_url=${origin}/#verify-here
+GET ${origin}/auth/bluesky/start?pubkey=hex64&amp;handle=alice.bsky.social&amp;return_url=${origin}/#verify-here${ytOAuthInlineExample}${ttOAuthInlineExample}</pre>
 
       <h3>Check OAuth Status</h3>
       <pre>GET ${origin}/auth/twitter/status?pubkey=hex64&amp;identity=jack</pre>
 
-      <div class="note">OAuth verification is also checked as a fallback during proof-post verification for Twitter, Bluesky, YouTube, and TikTok.</div>
+      <div class="note">OAuth verification is also checked as a fallback during proof-post verification for Twitter, Bluesky${extraPlatformNames}.</div>
     </section>
 
     <section id="other">
@@ -514,6 +739,24 @@ GET ${origin}/auth/tiktok/start?pubkey=hex64&amp;return_url=https://divine.video
 
     <script>
     const API = '${origin}';
+    const DIVINE_LOGIN_URL = '${divineLoginUrl}';
+    const KEYCAST_BASE = 'https://login.divine.video';
+    const KEYCAST_CLIENT_ID = 'Divine Identity Verification';
+    const KEYCAST_SCOPE = 'policy:social';
+    const KEYCAST_SESSION_KEY = 'verifyer_keycast_session_v1';
+    const KEYCAST_PKCE_KEY = 'verifyer_keycast_pkce_v1';
+    const KEYCAST_STATE_KEY = 'verifyer_keycast_state_v1';
+    const KEYCAST_HASH_KEY = 'verifyer_keycast_hash_v1';
+    const NOSTR_TOOLS_NIP46_URL = 'https://esm.sh/nostr-tools@2.23.3/nip46?bundle';
+    const NOSTR_TOOLS_PURE_URL = 'https://esm.sh/nostr-tools@2.23.3/pure?bundle';
+    const PROFILE_RELAYS = ['wss://relay.divine.video', 'wss://relay.damus.io', 'wss://relay.nostr.band'];
+    // NIP-46 traffic needs relays that accept kind 24133 events.
+    const REMOTE_SIGNER_RELAYS = ['wss://relay.damus.io', 'wss://nos.lol', 'wss://relay.snort.social', 'wss://relay.primal.net'];
+    let signerPubkeyHex = null;
+    let activeSigner = null;
+    let activeSignerSource = null;
+    let nostrToolsPromise = null;
+    let nostrConnectAbortController = null;
 
     function npubToHex(npub) {
       const CHARSET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
@@ -539,6 +782,1063 @@ GET ${origin}/auth/tiktok/start?pubkey=hex64&amp;return_url=https://divine.video
       return result.map(b => b.toString(16).padStart(2, '0')).join('');
     }
 
+    function setStatus(elId, msg, type) {
+      const el = document.getElementById(elId);
+      if (!el) return;
+      el.style.display = 'block';
+      el.textContent = msg;
+      el.style.background = type === 'error' ? '#fed7d7' : type === 'loading' ? '#fefcbf' : '#c6f6d5';
+      el.style.color = type === 'error' ? '#c53030' : type === 'loading' ? '#975a16' : '#276749';
+    }
+
+    function clearStatus(elId) {
+      const el = document.getElementById(elId);
+      if (el) el.style.display = 'none';
+    }
+
+    function signerSourceLabel(source) {
+      if (source === 'browser') return 'browser signer';
+      if (source === 'keycast') return 'login.divine.video';
+      if (source === 'bunker') return 'bunker';
+      if (source === 'nostrconnect') return 'Nostr Connect';
+      return '';
+    }
+
+    function updateSignerSummary() {
+      const el = document.getElementById('signer-session-summary');
+      if (!el) return;
+      const parts = [];
+      if (activeSignerSource) {
+        parts.push('Connected via ' + signerSourceLabel(activeSignerSource) + '.');
+      }
+      if (signerPubkeyHex) {
+        parts.push('Active key: ' + signerPubkeyHex.slice(0, 12) + '...' + signerPubkeyHex.slice(-8));
+      }
+      if (parts.length === 0) {
+        el.style.display = 'none';
+        el.textContent = '';
+        return;
+      }
+      el.style.display = 'block';
+      el.textContent = parts.join(' ');
+    }
+
+    function isBrowserSignerAvailable() {
+      return !!window.nostr &&
+        typeof window.nostr.getPublicKey === 'function' &&
+        typeof window.nostr.signEvent === 'function';
+    }
+
+    function createBrowserSigner() {
+      return {
+        async getPublicKey() {
+          return (await window.nostr.getPublicKey()).toLowerCase();
+        },
+        async signEvent(event) {
+          return await window.nostr.signEvent(event);
+        },
+      };
+    }
+
+    async function maybeCloseSigner(signer) {
+      if (!signer) return;
+      if (typeof signer.close === 'function') {
+        try {
+          await signer.close();
+        } catch {}
+      }
+    }
+
+    async function activateSigner(signer, source, successMessage) {
+      const pubkey = String(await signer.getPublicKey()).toLowerCase();
+      if (!/^[0-9a-f]{64}$/i.test(pubkey)) {
+        throw new Error('Signer returned an invalid pubkey.');
+      }
+      const previousSigner = activeSigner;
+      activeSigner = signer;
+      activeSignerSource = source;
+      signerPubkeyHex = pubkey;
+      setAccountInputValue(pubkey);
+      updateSignerSummary();
+      if (previousSigner && previousSigner !== signer) {
+        await maybeCloseSigner(previousSigner);
+      }
+      if (successMessage) {
+        setStatus('verify-login-status', successMessage, 'ok');
+      }
+      return pubkey;
+    }
+
+    function bytesToBase64Url(bytes) {
+      let binary = '';
+      for (const byte of bytes) {
+        binary += String.fromCharCode(byte);
+      }
+      return btoa(binary).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/g, '');
+    }
+
+    function randomBase64Url(size) {
+      const bytes = new Uint8Array(size);
+      crypto.getRandomValues(bytes);
+      return bytesToBase64Url(bytes);
+    }
+
+    async function sha256Base64Url(text) {
+      const data = new TextEncoder().encode(text);
+      const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', data));
+      return bytesToBase64Url(digest);
+    }
+
+    async function createKeycastPkce() {
+      const verifier = randomBase64Url(32);
+      const challenge = await sha256Base64Url(verifier);
+      return { verifier: verifier, challenge: challenge };
+    }
+
+    function getKeycastRedirectUrl() {
+      return window.location.origin + window.location.pathname;
+    }
+
+    function normalizeStoredKeycastSession(raw) {
+      if (!raw || typeof raw !== 'object') return null;
+      const accessToken = raw.accessToken || raw.access_token || '';
+      if (!accessToken) return null;
+      const expiresAt = raw.expiresAt || (raw.expires_in ? Date.now() + Number(raw.expires_in) * 1000 : null);
+      return {
+        accessToken: accessToken,
+        refreshToken: raw.refreshToken || raw.refresh_token || '',
+        bunkerUrl: raw.bunkerUrl || raw.bunker_url || '',
+        authorizationHandle: raw.authorizationHandle || raw.authorization_handle || '',
+        expiresAt: expiresAt || null,
+      };
+    }
+
+    function loadKeycastSession() {
+      try {
+        return normalizeStoredKeycastSession(JSON.parse(localStorage.getItem(KEYCAST_SESSION_KEY) || 'null'));
+      } catch {
+        return null;
+      }
+    }
+
+    function saveKeycastSession(session) {
+      localStorage.setItem(KEYCAST_SESSION_KEY, JSON.stringify(session));
+    }
+
+    function clearKeycastSession() {
+      localStorage.removeItem(KEYCAST_SESSION_KEY);
+    }
+
+    function clearKeycastFlowState() {
+      sessionStorage.removeItem(KEYCAST_PKCE_KEY);
+      sessionStorage.removeItem(KEYCAST_STATE_KEY);
+      sessionStorage.removeItem(KEYCAST_HASH_KEY);
+    }
+
+    function shouldRefreshKeycastSession(session) {
+      return !!session &&
+        !!session.refreshToken &&
+        !!session.expiresAt &&
+        Date.now() >= Number(session.expiresAt) - 5 * 60 * 1000;
+    }
+
+    function hasExpiredKeycastSession(session) {
+      return !!session && !!session.expiresAt && Date.now() >= Number(session.expiresAt);
+    }
+
+    async function postKeycastTokenRequest(body) {
+      const resp = await fetch(KEYCAST_BASE + '/api/oauth/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      let data = {};
+      try {
+        data = await resp.json();
+      } catch {}
+      if (!resp.ok) {
+        throw new Error(data.error_description || data.error || 'login.divine.video token exchange failed.');
+      }
+      return data;
+    }
+
+    async function getValidKeycastSession(session) {
+      let nextSession = session || loadKeycastSession();
+      if (!nextSession) return null;
+      if (shouldRefreshKeycastSession(nextSession)) {
+        let refreshed;
+        try {
+          refreshed = await postKeycastTokenRequest({
+            grant_type: 'refresh_token',
+            refresh_token: nextSession.refreshToken,
+            client_id: KEYCAST_CLIENT_ID,
+          });
+        } catch (err) {
+          clearKeycastSession();
+          throw err;
+        }
+        nextSession = normalizeStoredKeycastSession(refreshed);
+        if (!nextSession) throw new Error('login.divine.video returned an unusable session.');
+        saveKeycastSession(nextSession);
+        return nextSession;
+      }
+      if (hasExpiredKeycastSession(nextSession)) {
+        clearKeycastSession();
+        return null;
+      }
+      return nextSession;
+    }
+
+    async function callKeycastRpc(sessionRef, method, params) {
+      sessionRef.session = await getValidKeycastSession(sessionRef.session);
+      if (!sessionRef.session || !sessionRef.session.accessToken) {
+        throw new Error('Your login.divine.video session expired. Connect again.');
+      }
+      const resp = await fetch(KEYCAST_BASE + '/api/nostr', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + sessionRef.session.accessToken,
+        },
+        body: JSON.stringify({ method: method, params: params }),
+      });
+      let data = {};
+      try {
+        data = await resp.json();
+      } catch {}
+      if (!resp.ok) {
+        throw new Error(data.error || data.message || 'login.divine.video signer request failed.');
+      }
+      if (!data || data.result === undefined) {
+        throw new Error('login.divine.video signer returned no result.');
+      }
+      return data.result;
+    }
+
+    function createKeycastSigner(session) {
+      const sessionRef = { session: session };
+      return {
+        async getPublicKey() {
+          return await callKeycastRpc(sessionRef, 'get_public_key', []);
+        },
+        async signEvent(event) {
+          return await callKeycastRpc(sessionRef, 'sign_event', [event]);
+        },
+      };
+    }
+
+    function showNostrConnectUi(uri) {
+      const wrap = document.getElementById('nostr-connect-wrap');
+      const input = document.getElementById('nostr-connect-uri-input');
+      const link = document.getElementById('open-nostr-connect-link');
+      if (!wrap || !input || !link) return;
+      wrap.style.display = 'block';
+      input.value = uri;
+      link.href = uri;
+      document.getElementById('remote-signer-details').open = true;
+    }
+
+    function hideNostrConnectUi() {
+      const wrap = document.getElementById('nostr-connect-wrap');
+      const input = document.getElementById('nostr-connect-uri-input');
+      const link = document.getElementById('open-nostr-connect-link');
+      if (wrap) wrap.style.display = 'none';
+      if (input) input.value = '';
+      if (link) link.href = '#';
+    }
+
+    async function loadNostrTools() {
+      if (!nostrToolsPromise) {
+        nostrToolsPromise = Promise.all([
+          import(NOSTR_TOOLS_NIP46_URL),
+          import(NOSTR_TOOLS_PURE_URL),
+        ]).then(function(modules) {
+          return { nip46: modules[0], pure: modules[1] };
+        });
+      }
+      return await nostrToolsPromise;
+    }
+
+    function safeDecodeText(input) {
+      try {
+        return decodeURIComponent(input);
+      } catch {
+        return input;
+      }
+    }
+
+    async function resolveNip05ToHex(identifier) {
+      const normalized = (identifier || '').trim().toLowerCase();
+      const parts = normalized.split('@');
+      if (parts.length !== 2) {
+        throw new Error('That address does not look valid. Use format name@domain.');
+      }
+      const local = parts[0] || '_';
+      const domain = parts[1];
+      const resp = await fetch('https://' + domain + '/.well-known/nostr.json?name=' + encodeURIComponent(local));
+      if (!resp.ok) {
+        throw new Error('Could not find "' + normalized + '". Check spelling and try again.');
+      }
+      const data = await resp.json();
+      const key = data && data.names ? data.names[local] : null;
+      if (!key || !/^[0-9a-f]{64}$/i.test(key)) {
+        throw new Error('That address did not resolve to a usable Nostr key.');
+      }
+      return key.toLowerCase();
+    }
+
+    function extractHexFromText(text) {
+      const match = (text || '').match(/([0-9a-fA-F]{64})/);
+      return match ? match[1].toLowerCase() : null;
+    }
+
+    function extractNpubFromText(text) {
+      const match = (text || '').toLowerCase().match(/(npub1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]+)/);
+      return match ? match[1] : null;
+    }
+
+    async function normalizePubkeyInput(raw) {
+      const input = (raw || '').trim();
+      if (!input) throw new Error('Enter your Divine address or npub first.');
+
+      const decoded = safeDecodeText(input);
+      const hex = extractHexFromText(decoded);
+      if (hex) return hex;
+
+      const npub = extractNpubFromText(decoded);
+      if (npub) return npubToHex(npub);
+
+      const nip05Match = decoded.match(/([a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,})/);
+      if (nip05Match) return await resolveNip05ToHex(nip05Match[1]);
+
+      throw new Error('Could not read your key. Paste a Divine address, npub, profile URL, or 64-character key.');
+    }
+
+    function setAccountInputValue(value) {
+      const inputEl = document.getElementById('verify-pubkey-input');
+      if (!inputEl) return;
+      inputEl.value = value;
+      if (value) localStorage.setItem('verifyer_account_input', value);
+    }
+
+    function inferLoginQueryPubkey(params) {
+      const keys = ['npub', 'pubkey', 'nostr_pubkey', 'key'];
+      for (const key of keys) {
+        const value = params.get(key);
+        if (!value) continue;
+        const hex = extractHexFromText(value);
+        if (hex) return hex;
+        const npub = extractNpubFromText(value);
+        if (npub) return npubToHex(npub);
+      }
+      return null;
+    }
+
+    function applyLoginQueryHint() {
+      const params = new URLSearchParams(window.location.search);
+      const hintPubkey = inferLoginQueryPubkey(params);
+      if (!hintPubkey) return;
+      signerPubkeyHex = hintPubkey;
+      activeSignerSource = null;
+      setAccountInputValue(hintPubkey);
+      updateSignerSummary();
+      setStatus('verify-login-status', 'Logged in. Nostr key detected from return URL.', 'ok');
+      params.delete('npub');
+      params.delete('pubkey');
+      params.delete('nostr_pubkey');
+      params.delete('key');
+      const cleanUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '') + window.location.hash;
+      window.history.replaceState({}, '', cleanUrl);
+    }
+
+    async function connectBrowserSigner() {
+      const browserSigner = createBrowserSigner();
+      const loginUrl = KEYCAST_BASE + '/api/auth/login';
+      const unsignedEvent = {
+        kind: 27235,
+        content: '',
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [
+          ['u', loginUrl],
+          ['method', 'POST'],
+        ],
+      };
+
+      setStatus('verify-login-status', 'Requesting signature from your browser signer...', 'loading');
+      const signedEvent = await browserSigner.signEvent(unsignedEvent);
+      if (!signedEvent || typeof signedEvent !== 'object') {
+        throw new Error('Signer did not return a valid login event.');
+      }
+
+      setStatus('verify-login-status', 'Verifying login with login.divine.video...', 'loading');
+      const resp = await fetch(API + '/auth/nostr/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event: signedEvent }),
+      });
+      const data = await resp.json();
+      if (!resp.ok || !data || !data.pubkey) {
+        throw new Error((data && data.error) || 'Nostr login failed.');
+      }
+
+      const loginPubkey = String(data.pubkey).toLowerCase();
+      const signerPubkey = await browserSigner.getPublicKey();
+      if (loginPubkey !== signerPubkey) {
+        throw new Error('The signed login event did not match your browser signer key.');
+      }
+
+      await activateSigner(browserSigner, 'browser', 'Signed in with your browser signer.');
+    }
+
+    async function startKeycastLogin() {
+      const pkce = await createKeycastPkce();
+      const state = randomBase64Url(24);
+      sessionStorage.setItem(KEYCAST_PKCE_KEY, JSON.stringify(pkce));
+      sessionStorage.setItem(KEYCAST_STATE_KEY, state);
+      sessionStorage.setItem(KEYCAST_HASH_KEY, window.location.hash || '#verify-here');
+
+      const session = loadKeycastSession();
+      const url = new URL(KEYCAST_BASE + '/api/oauth/authorize');
+      url.searchParams.set('client_id', KEYCAST_CLIENT_ID);
+      url.searchParams.set('redirect_uri', getKeycastRedirectUrl());
+      url.searchParams.set('scope', KEYCAST_SCOPE);
+      url.searchParams.set('code_challenge', pkce.challenge);
+      url.searchParams.set('code_challenge_method', 'S256');
+      url.searchParams.set('state', state);
+      url.searchParams.set('default_register', 'true');
+      if (session && session.authorizationHandle) {
+        url.searchParams.set('authorization_handle', session.authorizationHandle);
+      }
+      window.location.href = url.toString();
+    }
+
+    function cleanKeycastCallbackParams() {
+      const params = new URLSearchParams(window.location.search);
+      params.delete('code');
+      params.delete('state');
+      params.delete('error');
+      params.delete('error_description');
+      const nextHash = sessionStorage.getItem(KEYCAST_HASH_KEY) || window.location.hash;
+      const cleanUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '') + (nextHash || '');
+      window.history.replaceState({}, '', cleanUrl);
+      clearKeycastFlowState();
+    }
+
+    async function maybeHandleKeycastCallback() {
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get('code');
+      const error = params.get('error');
+      if (!code && !error) return false;
+
+      clearStatus('verify-global-status');
+      setStatus('verify-login-status', 'Finishing login.divine.video session...', 'loading');
+      try {
+        if (error) {
+          throw new Error(params.get('error_description') || error);
+        }
+
+        const expectedState = sessionStorage.getItem(KEYCAST_STATE_KEY);
+        const receivedState = params.get('state');
+        if (!expectedState || !receivedState || expectedState !== receivedState) {
+          throw new Error('login.divine.video returned an invalid state token.');
+        }
+
+        let pkce;
+        try {
+          pkce = JSON.parse(sessionStorage.getItem(KEYCAST_PKCE_KEY) || 'null');
+        } catch {
+          pkce = null;
+        }
+        if (!pkce || !pkce.verifier) {
+          throw new Error('Missing PKCE verifier. Start login again.');
+        }
+
+        const tokenData = await postKeycastTokenRequest({
+          grant_type: 'authorization_code',
+          code: code,
+          client_id: KEYCAST_CLIENT_ID,
+          redirect_uri: getKeycastRedirectUrl(),
+          code_verifier: pkce.verifier,
+        });
+        const session = normalizeStoredKeycastSession(tokenData);
+        if (!session) {
+          throw new Error('login.divine.video did not return a usable signer session.');
+        }
+        saveKeycastSession(session);
+        await activateSigner(createKeycastSigner(session), 'keycast', 'Connected with login.divine.video.');
+      } catch (e) {
+        clearKeycastSession();
+        setStatus('verify-login-status', e.message || 'Could not connect login.divine.video.', 'error');
+      } finally {
+        cleanKeycastCallbackParams();
+      }
+      return true;
+    }
+
+    async function restoreKeycastSession() {
+      const session = await getValidKeycastSession();
+      if (!session) return false;
+      try {
+        await activateSigner(createKeycastSigner(session), 'keycast', 'Reconnected login.divine.video signer session.');
+        return true;
+      } catch {
+        clearKeycastSession();
+        return false;
+      }
+    }
+
+    async function connectKeycastSigner() {
+      clearStatus('verify-login-status');
+      setStatus('verify-login-status', 'Opening secure login.divine.video...', 'loading');
+      await startKeycastLogin();
+    }
+
+    async function connectBunkerSigner() {
+      clearStatus('verify-login-status');
+      const input = document.getElementById('bunker-input').value.trim();
+      if (!input) {
+        setStatus('verify-login-status', 'Paste a bunker URL or bunker NIP-05 first.', 'error');
+        return;
+      }
+      try {
+        setButtonLoading('connect-bunker-btn', true, 'Connecting...');
+        setStatus('verify-login-status', 'Connecting to bunker signer...', 'loading');
+        const tools = await loadNostrTools();
+        const parsed = await tools.nip46.parseBunkerInput(input);
+        if (!parsed) {
+          throw new Error('Could not read that bunker URL or bunker NIP-05.');
+        }
+        const signer = tools.nip46.BunkerSigner.fromBunker(tools.pure.generateSecretKey(), parsed);
+        await signer.connect();
+        hideNostrConnectUi();
+        await activateSigner(signer, 'bunker', 'Connected with bunker signer.');
+      } catch (e) {
+        setStatus('verify-login-status', e.message || 'Could not connect bunker signer.', 'error');
+      } finally {
+        setButtonLoading('connect-bunker-btn', false, '');
+      }
+    }
+
+    async function startNostrConnect() {
+      clearStatus('verify-login-status');
+      try {
+        setButtonLoading('start-nostr-connect-btn', true, 'Waiting...');
+        setStatus('verify-login-status', 'Preparing Nostr Connect session...', 'loading');
+        const tools = await loadNostrTools();
+        const clientSecretKey = tools.pure.generateSecretKey();
+        const secret = randomBase64Url(18);
+        const uri = tools.nip46.createNostrConnectURI({
+          clientPubkey: tools.pure.getPublicKey(clientSecretKey),
+          relays: REMOTE_SIGNER_RELAYS,
+          secret: secret,
+          perms: ['get_public_key', 'sign_event'],
+          name: 'Divine Verification',
+          url: window.location.origin,
+        });
+        if (nostrConnectAbortController) {
+          nostrConnectAbortController.abort();
+        }
+        nostrConnectAbortController = new AbortController();
+        showNostrConnectUi(uri);
+        setStatus('verify-login-status', 'Waiting for your signer to approve the Nostr Connect request...', 'loading');
+        const signer = await tools.nip46.BunkerSigner.fromURI(
+          clientSecretKey,
+          uri,
+          {},
+          nostrConnectAbortController.signal
+        );
+        nostrConnectAbortController = null;
+        hideNostrConnectUi();
+        await activateSigner(signer, 'nostrconnect', 'Connected with Nostr Connect.');
+      } catch (e) {
+        const aborted = e && (e.name === 'AbortError' || String(e.message || '').toLowerCase().includes('aborted'));
+        if (aborted) {
+          clearStatus('verify-login-status');
+        } else {
+          setStatus('verify-login-status', e.message || 'Could not connect with Nostr Connect.', 'error');
+        }
+      } finally {
+        setButtonLoading('start-nostr-connect-btn', false, '');
+      }
+    }
+
+    function cancelNostrConnect() {
+      if (nostrConnectAbortController) {
+        nostrConnectAbortController.abort();
+        nostrConnectAbortController = null;
+      }
+      hideNostrConnectUi();
+      clearStatus('verify-login-status');
+    }
+
+    async function copyNostrConnectUri() {
+      const input = document.getElementById('nostr-connect-uri-input');
+      if (!input || !input.value) return;
+      try {
+        await navigator.clipboard.writeText(input.value);
+        setStatus('verify-login-status', 'Nostr Connect URI copied.', 'ok');
+      } catch {
+        setStatus('verify-login-status', 'Could not copy the Nostr Connect URI.', 'error');
+      }
+    }
+
+    async function connectNostrSigner() {
+      clearStatus('verify-login-status');
+      try {
+        setButtonLoading('connect-nostr-btn', true, 'Signing in...');
+        if (isBrowserSignerAvailable()) {
+          await connectBrowserSigner();
+          return;
+        }
+        await connectKeycastSigner();
+      } catch (e) {
+        setStatus('verify-login-status', e.message || 'Could not sign in with Nostr.', 'error');
+      } finally {
+        setButtonLoading('connect-nostr-btn', false, '');
+      }
+    }
+
+    async function getActivePubkey() {
+      const accountInput = document.getElementById('verify-pubkey-input').value;
+      if (accountInput && accountInput.trim()) {
+        const parsed = await normalizePubkeyInput(accountInput);
+        if (signerPubkeyHex && signerPubkeyHex !== parsed) {
+          throw new Error('The typed account does not match your signed-in signer key.');
+        }
+        return parsed;
+      }
+      if (signerPubkeyHex) return signerPubkeyHex;
+      throw new Error('Please sign in with Nostr first, or paste your account.');
+    }
+
+    function setButtonLoading(buttonId, isLoading, loadingText) {
+      const button = document.getElementById(buttonId);
+      if (!button) return;
+      if (!button.dataset.defaultText) {
+        button.dataset.defaultText = button.textContent || '';
+      }
+      button.disabled = isLoading;
+      button.textContent = isLoading ? loadingText : button.dataset.defaultText;
+    }
+
+    function updateOAuthInputs() {
+      const platform = document.getElementById('oauth-platform-select').value;
+      const wrap = document.getElementById('oauth-bluesky-handle-wrap');
+      wrap.style.display = platform === 'bluesky' ? 'block' : 'none';
+    }
+
+    function updateProofInputs() {
+      const platform = document.getElementById('proof-platform-select').value;
+      const identityInput = document.getElementById('proof-identity-input');
+      const proofLabel = document.getElementById('proof-label');
+      const proofInput = document.getElementById('proof-proof-input');
+      const helper = document.getElementById('proof-helper');
+
+      if (platform === 'bluesky') {
+        identityInput.placeholder = 'alice.bsky.social';
+        proofLabel.textContent = 'Post link or proof ID (optional)';
+        proofInput.placeholder = 'Paste full Bluesky post URL or leave blank for identity-link check';
+        helper.textContent = 'Bluesky can verify by login or identity-link record, even without a post ID.';
+      } else if (platform === 'github') {
+        identityInput.placeholder = 'octocat';
+        proofLabel.textContent = 'Gist link or Gist ID';
+        proofInput.placeholder = 'https://gist.github.com/octocat/abc123... or abc123...';
+        helper.textContent = 'Paste a gist URL and we will extract the ID for you.';
+      } else if (platform === 'twitter') {
+        identityInput.placeholder = 'jack';
+        proofLabel.textContent = 'Post link or Tweet ID';
+        proofInput.placeholder = 'https://x.com/jack/status/123... or 123...';
+        helper.textContent = 'Paste an X/Twitter post URL for easiest setup.';
+      } else if (platform === 'mastodon') {
+        identityInput.placeholder = 'mastodon.social/@alice';
+        proofLabel.textContent = 'Status link or Status ID';
+        proofInput.placeholder = 'https://mastodon.social/@alice/123... or 123...';
+        helper.textContent = 'Identity format is instance/@user. A full status URL also works.';
+      } else if (platform === 'telegram') {
+        identityInput.placeholder = 'mychannel';
+        proofLabel.textContent = 'Message link or channel/message ID';
+        proofInput.placeholder = 'https://t.me/mychannel/123 or mychannel/123';
+        helper.textContent = 'Telegram proof should point to a public message that contains your npub.';
+      } else if (platform === 'discord') {
+        identityInput.placeholder = 'your server name';
+        proofLabel.textContent = 'Invite link or invite code';
+        proofInput.placeholder = 'https://discord.gg/abc123 or abc123';
+        helper.textContent = 'Use a non-expiring invite and include your npub in server name/description.';
+      } else if (platform === 'youtube') {
+        identityInput.placeholder = 'UC... or @channelhandle';
+        proofLabel.textContent = 'Video link or video ID';
+        proofInput.placeholder = 'https://www.youtube.com/watch?v=... or 11-char ID';
+        helper.textContent = 'We verify your npub inside the video description.';
+      } else if (platform === 'tiktok') {
+        identityInput.placeholder = 'username';
+        proofLabel.textContent = 'Video link or video ID';
+        proofInput.placeholder = 'https://www.tiktok.com/@user/video/123... or numeric ID';
+        helper.textContent = 'Paste a TikTok video URL and we will extract the ID.';
+      } else {
+        identityInput.placeholder = 'Account identity';
+        proofLabel.textContent = 'Post link or proof ID';
+        proofInput.placeholder = 'Paste full URL or proof ID';
+        helper.textContent = 'Paste a full link if available.';
+      }
+    }
+
+    function tryMakeUrl(input) {
+      const raw = (input || '').trim();
+      if (!raw) return null;
+      try {
+        return new URL(raw);
+      } catch {}
+      if (/^[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}\\/.+/.test(raw)) {
+        try {
+          return new URL('https://' + raw);
+        } catch {}
+      }
+      return null;
+    }
+
+    function parseProofUrl(platform, parsedUrl) {
+      const host = parsedUrl.hostname.toLowerCase();
+      const path = parsedUrl.pathname.split('/').filter(Boolean);
+
+      if (platform === 'github' && host.includes('gist.github.com')) {
+        if (path.length >= 2) {
+          return { identity: path[0], proof: path[1] };
+        }
+      }
+
+      if (platform === 'twitter' && (host === 'x.com' || host === 'www.x.com' || host === 'twitter.com' || host === 'www.twitter.com')) {
+        const statusIdx = path.indexOf('status');
+        if (statusIdx > 0 && path[statusIdx + 1]) {
+          return { identity: path[statusIdx - 1].replace(/^@/, ''), proof: path[statusIdx + 1] };
+        }
+      }
+
+      if (platform === 'bluesky' && host === 'bsky.app') {
+        if (path[0] === 'profile' && path[1] && path[2] === 'post' && path[3]) {
+          return { identity: path[1], proof: path[3] };
+        }
+      }
+
+      if (platform === 'mastodon') {
+        if (path.length >= 2 && path[0].startsWith('@')) {
+          return { identity: host + '/' + path[0], proof: path[1] };
+        }
+        if (path[0] === 'users' && path[1] && path[2] === 'statuses' && path[3]) {
+          return { identity: host + '/@' + path[1], proof: path[3] };
+        }
+      }
+
+      if (platform === 'telegram' && (host === 't.me' || host === 'www.t.me')) {
+        if (path[0] && path[1]) {
+          const channel = path[0].replace(/^@/, '');
+          return { identity: channel, proof: channel + '/' + path[1] };
+        }
+      }
+
+      if (platform === 'discord') {
+        if ((host === 'discord.gg' || host === 'www.discord.gg') && path[0]) {
+          return { proof: path[0] };
+        }
+        if ((host === 'discord.com' || host === 'www.discord.com') && path[0] === 'invite' && path[1]) {
+          return { proof: path[1] };
+        }
+      }
+
+      if (platform === 'youtube') {
+        if ((host === 'youtube.com' || host === 'www.youtube.com') && parsedUrl.searchParams.get('v')) {
+          return { proof: parsedUrl.searchParams.get('v') };
+        }
+        if ((host === 'youtube.com' || host === 'www.youtube.com') && path[0] === 'shorts' && path[1]) {
+          return { proof: path[1] };
+        }
+        if ((host === 'youtu.be' || host === 'www.youtu.be') && path[0]) {
+          return { proof: path[0] };
+        }
+      }
+
+      if (platform === 'tiktok' && host.endsWith('tiktok.com')) {
+        const userPart = path.find(part => part.startsWith('@'));
+        const videoIdx = path.indexOf('video');
+        if (videoIdx !== -1 && path[videoIdx + 1]) {
+          return {
+            identity: userPart ? userPart.slice(1) : undefined,
+            proof: path[videoIdx + 1],
+          };
+        }
+      }
+
+      return {};
+    }
+
+    function normalizeProofInputs(platform, rawIdentity, rawProof) {
+      let identity = (rawIdentity || '').trim();
+      let proof = (rawProof || '').trim();
+
+      const proofUrl = tryMakeUrl(proof);
+      if (proofUrl) {
+        const parsed = parseProofUrl(platform, proofUrl);
+        if (parsed.identity && !identity) identity = parsed.identity;
+        if (parsed.proof) proof = parsed.proof;
+      } else if (!proof) {
+        const identityUrl = tryMakeUrl(identity);
+        if (identityUrl) {
+          const parsed = parseProofUrl(platform, identityUrl);
+          if (parsed.identity) identity = parsed.identity;
+          if (parsed.proof) proof = parsed.proof;
+        }
+      }
+
+      if (platform === 'twitter' || platform === 'telegram' || platform === 'tiktok') {
+        identity = identity.replace(/^@/, '');
+      }
+      if (platform === 'bluesky') {
+        identity = identity.replace(/^@/, '').toLowerCase();
+      }
+      if (platform === 'discord') {
+        const maybeCodeUrl = tryMakeUrl(proof);
+        if (maybeCodeUrl) {
+          const parsed = parseProofUrl(platform, maybeCodeUrl);
+          if (parsed.proof) proof = parsed.proof;
+        }
+      }
+
+      proof = proof.replace(/^\\/+/, '').replace(/\\/+$/, '');
+      return { identity, proof };
+    }
+
+    async function startOAuthVerification() {
+      try {
+        clearStatus('verify-global-status');
+        clearStatus('oauth-status');
+        setButtonLoading('oauth-start-btn', true, 'Opening sign-in...');
+        setStatus('oauth-status', 'Checking your Divine account...', 'loading');
+
+        const pubkey = await getActivePubkey();
+        const platform = document.getElementById('oauth-platform-select').value;
+        setAccountInputValue(pubkey);
+
+        const params = new URLSearchParams({
+          pubkey,
+          return_url: window.location.origin + window.location.pathname + '#verify-here',
+        });
+        if (platform === 'bluesky') {
+          const handle = document.getElementById('oauth-bluesky-handle-input').value.trim().replace(/^@/, '').toLowerCase();
+          if (!handle) throw new Error('Enter your Bluesky handle (example: alice.bsky.social).');
+          params.set('handle', handle);
+        }
+        setStatus('oauth-status', 'Opening secure ' + platform + ' sign-in...', 'loading');
+        window.location.href = API + '/auth/' + platform + '/start?' + params.toString();
+      } catch (e) {
+        setStatus('oauth-status', e.message || 'Could not start sign-in.', 'error');
+        setButtonLoading('oauth-start-btn', false, '');
+      }
+    }
+
+    async function verifySingleHere() {
+      const resultEl = document.getElementById('proof-result');
+      resultEl.style.display = 'none';
+      try {
+        clearStatus('verify-global-status');
+        clearStatus('publish-status');
+        clearStatus('proof-status');
+        setButtonLoading('proof-verify-btn', true, 'Checking...');
+        setStatus('proof-status', 'Checking your account...', 'loading');
+
+        const pubkey = await getActivePubkey();
+        setAccountInputValue(pubkey);
+
+        const platform = document.getElementById('proof-platform-select').value;
+        const rawIdentity = document.getElementById('proof-identity-input').value;
+        const rawProof = document.getElementById('proof-proof-input').value;
+        const normalized = normalizeProofInputs(platform, rawIdentity, rawProof);
+
+        document.getElementById('proof-identity-input').value = normalized.identity;
+        document.getElementById('proof-proof-input').value = normalized.proof;
+
+        if (!normalized.identity) throw new Error('Enter your account name for this platform.');
+        if (platform !== 'bluesky' && !normalized.proof) throw new Error('Paste the post link or proof ID for this platform.');
+
+        setStatus('proof-status', 'Verifying link now...', 'loading');
+        const resp = await fetch(API + '/verify/single', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            platform,
+            identity: normalized.identity,
+            proof: normalized.proof,
+            pubkey,
+          }),
+        });
+
+        const data = await resp.json();
+        if (!resp.ok || data.error) {
+          setStatus('proof-status', data.error || 'Not verified yet.', 'error');
+        } else if (data.verified) {
+          const method = data.method ? ' via ' + data.method.replace('_', ' ') : '';
+          setStatus('proof-status', 'Success. This account is verified' + method + '.', 'ok');
+        } else {
+          setStatus('proof-status', data.error || 'Not verified yet.', 'error');
+        }
+        resultEl.textContent = JSON.stringify(data, null, 2);
+        resultEl.style.display = 'block';
+      } catch (e) {
+        setStatus('proof-status', e.message || 'Verification failed.', 'error');
+      } finally {
+        setButtonLoading('proof-verify-btn', false, '');
+      }
+    }
+
+    function currentProofContext() {
+      const platform = document.getElementById('proof-platform-select').value;
+      const normalized = normalizeProofInputs(
+        platform,
+        document.getElementById('proof-identity-input').value,
+        document.getElementById('proof-proof-input').value
+      );
+      document.getElementById('proof-identity-input').value = normalized.identity;
+      document.getElementById('proof-proof-input').value = normalized.proof;
+      return { platform, identity: normalized.identity, proof: normalized.proof || 'oauth' };
+    }
+
+    function publishEventToRelay(relayUrl, event) {
+      return new Promise((resolve) => {
+        let settled = false;
+        let ws = null;
+        const done = (ok, message) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          if (ws) {
+            try { ws.close(); } catch {}
+          }
+          resolve({ relay: relayUrl, ok, message });
+        };
+
+        const timer = setTimeout(() => done(false, 'timeout'), 7000);
+        try {
+          ws = new WebSocket(relayUrl);
+        } catch {
+          done(false, 'connect failed');
+          return;
+        }
+
+        ws.onopen = () => {
+          try {
+            ws.send(JSON.stringify(['EVENT', event]));
+          } catch {
+            done(false, 'send failed');
+          }
+        };
+        ws.onmessage = (msg) => {
+          try {
+            const data = JSON.parse(msg.data);
+            if (data[0] === 'OK' && data[1] === event.id) {
+              done(Boolean(data[2]), data[3] || (data[2] ? 'accepted' : 'rejected'));
+            } else if (data[0] === 'NOTICE') {
+              done(false, data[1] || 'notice');
+            }
+          } catch {}
+        };
+        ws.onerror = () => done(false, 'relay error');
+        ws.onclose = () => done(false, 'closed');
+      });
+    }
+
+    async function publishIdentityTagToNostr() {
+      clearStatus('verify-global-status');
+      clearStatus('publish-status');
+      try {
+        setButtonLoading('publish-kind0-btn', true, 'Publishing...');
+        setStatus('publish-status', 'Checking signer and profile...', 'loading');
+
+        if (!activeSigner || typeof activeSigner.signEvent !== 'function' || typeof activeSigner.getPublicKey !== 'function') {
+          throw new Error('A signer session is required to publish. Connect a browser signer, login.divine.video, bunker, or Nostr Connect first.');
+        }
+
+        const activePubkey = await getActivePubkey();
+        const signerPubkey = String(await activeSigner.getPublicKey()).toLowerCase();
+        if (activePubkey !== signerPubkey) {
+          throw new Error('Signed-in key and selected account do not match.');
+        }
+        signerPubkeyHex = signerPubkey;
+        setAccountInputValue(signerPubkey);
+        updateSignerSummary();
+
+        const link = currentProofContext();
+        if (!link.identity) {
+          throw new Error('Enter the platform account name first.');
+        }
+
+        setStatus('publish-status', 'Loading current kind 0 profile...', 'loading');
+        let profile = null;
+        for (const relay of PROFILE_RELAYS) {
+          try {
+            profile = await fetchProfile(relay, signerPubkey);
+            if (profile) break;
+          } catch {}
+        }
+
+        const content = profile && typeof profile.content === 'string' ? profile.content : '{}';
+        const tags = Array.isArray(profile?.tags) ? profile.tags.filter(Array.isArray) : [];
+        const claimKey = link.platform + ':' + link.identity;
+        const nextTags = tags.filter(tag => !(tag[0] === 'i' && typeof tag[1] === 'string' && tag[1].toLowerCase() === claimKey.toLowerCase()));
+        nextTags.push(['i', claimKey, link.proof]);
+
+        const unsignedEvent = {
+          kind: 0,
+          created_at: Math.floor(Date.now() / 1000),
+          tags: nextTags,
+          content,
+          pubkey: signerPubkey,
+        };
+
+        setStatus('publish-status', 'Requesting signature from your signer...', 'loading');
+        const signedEvent = await activeSigner.signEvent(unsignedEvent);
+        if (!signedEvent || !signedEvent.id || !signedEvent.sig) {
+          throw new Error('Signer did not return a valid signed event.');
+        }
+        if (String(signedEvent.pubkey || '').toLowerCase() !== signerPubkey) {
+          throw new Error('Signer returned an event for a different pubkey.');
+        }
+
+        setStatus('publish-status', 'Publishing kind 0 event to relays...', 'loading');
+        const relayResults = await Promise.all(PROFILE_RELAYS.map(relay => publishEventToRelay(relay, signedEvent)));
+        const successCount = relayResults.filter(r => r.ok).length;
+        if (successCount === 0) {
+          const firstError = relayResults[0] && relayResults[0].message ? relayResults[0].message : 'no relay accepted the event';
+          throw new Error('Publish failed: ' + firstError);
+        }
+
+        setStatus('publish-status', 'Published to ' + successCount + '/' + PROFILE_RELAYS.length + ' relays. Your Nostr profile link is now updated.', 'ok');
+      } catch (e) {
+        setStatus('publish-status', e.message || 'Could not publish to Nostr profile.', 'error');
+      } finally {
+        setButtonLoading('publish-kind0-btn', false, '');
+      }
+    }
+
+    function handleOAuthCallbackMessage() {
+      const params = new URLSearchParams(window.location.search);
+      let shouldClean = false;
+      if (params.get('oauth_verified') === 'true') {
+        const platform = params.get('platform') || 'account';
+        const identity = params.get('identity') || '';
+        setStatus('verify-global-status', 'Success. Your ' + platform + ' account is now linked' + (identity ? ': ' + identity : '') + '.', 'ok');
+        shouldClean = true;
+      } else if (params.get('oauth_error')) {
+        setStatus('verify-global-status', 'Sign-in was not completed: ' + params.get('oauth_error'), 'error');
+        shouldClean = true;
+      }
+      if (shouldClean) {
+        params.delete('oauth_verified');
+        params.delete('platform');
+        params.delete('identity');
+        params.delete('oauth_error');
+        const cleanUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '') + window.location.hash;
+        window.history.replaceState({}, '', cleanUrl);
+      }
+    }
+
     function showStatus(msg, type) {
       const el = document.getElementById('lookup-status');
       el.style.display = 'block';
@@ -547,9 +1847,7 @@ GET ${origin}/auth/tiktok/start?pubkey=hex64&amp;return_url=https://divine.video
       el.style.color = type === 'error' ? '#c53030' : type === 'loading' ? '#975a16' : '#276749';
     }
 
-    function hideStatus() {
-      document.getElementById('lookup-status').style.display = 'none';
-    }
+    function hideStatus() { clearStatus('lookup-status'); }
 
     function renderResults(results, pubkey) {
       const el = document.getElementById('lookup-results');
@@ -610,7 +1908,7 @@ GET ${origin}/auth/tiktok/start?pubkey=hex64&amp;return_url=https://divine.video
         showStatus('Found pubkey: ' + pubkey.slice(0, 8) + '...' + pubkey.slice(-8) + '. Fetching profile from relays...', 'loading');
 
         // Fetch profile from Nostr relays to get i-tags
-        const relays = ['wss://relay.divine.video', 'wss://relay.damus.io', 'wss://relay.nostr.band'];
+        const relays = PROFILE_RELAYS;
         let profile = null;
 
         for (const relay of relays) {
@@ -651,7 +1949,7 @@ GET ${origin}/auth/tiktok/start?pubkey=hex64&amp;return_url=https://divine.video
           const [platform, ...rest] = tag[1].split(':');
           const identity = rest.join(':');
           return { platform, identity, proof: tag[2], pubkey };
-        }).filter(c => ['github','twitter','mastodon','telegram','bluesky','discord','youtube','tiktok'].includes(c.platform));
+        }).filter(c => ['github','twitter','mastodon','telegram','bluesky','discord'${extraLookupPlatforms}].includes(c.platform));
 
         if (claims.length === 0) {
           showStatus('Profile has identity tags but none for supported platforms.', 'error');
@@ -730,7 +2028,62 @@ GET ${origin}/auth/tiktok/start?pubkey=hex64&amp;return_url=https://divine.video
       });
     }
 
-    // Handle Enter key
+    // Verify Here wiring
+    document.getElementById('connect-nostr-btn').addEventListener('click', connectNostrSigner);
+    document.getElementById('connect-keycast-btn').addEventListener('click', async () => {
+      clearStatus('verify-login-status');
+      try {
+        setButtonLoading('connect-keycast-btn', true, 'Opening...');
+        await connectKeycastSigner();
+      } catch (e) {
+        setStatus('verify-login-status', e.message || 'Could not open login.divine.video.', 'error');
+      } finally {
+        setButtonLoading('connect-keycast-btn', false, '');
+      }
+    });
+    document.getElementById('connect-bunker-btn').addEventListener('click', connectBunkerSigner);
+    document.getElementById('start-nostr-connect-btn').addEventListener('click', startNostrConnect);
+    document.getElementById('copy-nostr-connect-btn').addEventListener('click', copyNostrConnectUri);
+    document.getElementById('cancel-nostr-connect-btn').addEventListener('click', cancelNostrConnect);
+    document.getElementById('oauth-platform-select').addEventListener('change', updateOAuthInputs);
+    document.getElementById('proof-platform-select').addEventListener('change', updateProofInputs);
+    document.getElementById('oauth-start-btn').addEventListener('click', startOAuthVerification);
+    document.getElementById('proof-verify-btn').addEventListener('click', verifySingleHere);
+    document.getElementById('publish-kind0-btn').addEventListener('click', publishIdentityTagToNostr);
+    document.getElementById('verify-pubkey-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') startOAuthVerification();
+    });
+    document.getElementById('proof-identity-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') verifySingleHere();
+    });
+    document.getElementById('proof-proof-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') verifySingleHere();
+    });
+    document.getElementById('bunker-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') connectBunkerSigner();
+    });
+    document.getElementById('verify-pubkey-input').addEventListener('blur', () => {
+      const value = document.getElementById('verify-pubkey-input').value.trim();
+      if (value) localStorage.setItem('verifyer_account_input', value);
+    });
+    const savedAccountInput = localStorage.getItem('verifyer_account_input');
+    if (savedAccountInput) {
+      document.getElementById('verify-pubkey-input').value = savedAccountInput;
+    }
+    updateOAuthInputs();
+    updateProofInputs();
+    handleOAuthCallbackMessage();
+    updateSignerSummary();
+    (async () => {
+      const handledKeycast = await maybeHandleKeycastCallback();
+      if (!handledKeycast) {
+        applyLoginQueryHint();
+        await restoreKeycastSession();
+      }
+      updateSignerSummary();
+    })();
+
+    // Lookup tool Enter key
     document.getElementById('lookup-input').addEventListener('keydown', (e) => {
       if (e.key === 'Enter') doLookup();
     });

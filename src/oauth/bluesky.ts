@@ -1,6 +1,13 @@
 import type { Bindings, OAuthState } from '../types'
 import { generatePKCE, generateRandomString, generateDPoPKeyPair, importDPoPPrivateKey, createDPoPProof } from './crypto'
 import { storeOAuthState, getOAuthState, deleteOAuthState, storeOAuthVerification } from './state'
+import { buildNostrIdentityLinkRecord, DIVINE_IDENTITY_LINK_COLLECTION } from '../identity-link'
+import { hexToNpub } from '../utils/npub'
+
+type DidDocument = {
+  alsoKnownAs?: string[]
+  service?: Array<{ id?: string; serviceEndpoint?: string }>
+}
 
 /** Validate that a URL is HTTPS and points to a public host (SSRF protection) */
 function isSafeUrl(urlStr: string): boolean {
@@ -40,31 +47,10 @@ async function resolveAuthServer(handle: string): Promise<{
   if (!did) return null
 
   // 2. Get PDS from DID document
-  let pdsUrl: string | null = null
-  if (did.startsWith('did:plc:')) {
-    const didResp = await fetch(`https://plc.directory/${did}`)
-    if (!didResp.ok) return null
-    let didDoc: { service?: Array<{ id: string; serviceEndpoint: string }> }
-    try {
-      didDoc = await didResp.json() as typeof didDoc
-    } catch { return null }
-    pdsUrl = didDoc.service?.find(s => s.id === '#atproto_pds')?.serviceEndpoint || null
-  } else if (did.startsWith('did:web:')) {
-    const domain = decodeURIComponent(did.slice('did:web:'.length))
-    // Block path traversal in did:web domains (e.g., did:web:evil.com%2F..%2Flocalhost)
-    if (domain.includes('/') || domain.includes('\\')) return null
-    const didWebUrl = `https://${domain}/.well-known/did.json`
-    if (!isSafeUrl(didWebUrl)) return null
-    const didResp = await fetch(didWebUrl)
-    if (!didResp.ok) return null
-    let didDoc: { service?: Array<{ id: string; serviceEndpoint: string }> }
-    try {
-      didDoc = await didResp.json() as typeof didDoc
-    } catch { return null }
-    pdsUrl = didDoc.service?.find(s => s.id === '#atproto_pds')?.serviceEndpoint || null
-  }
-
-  if (!pdsUrl || !isSafeUrl(pdsUrl)) return null
+  const didDoc = await resolveDidDocument(did)
+  if (!didDoc) return null
+  const pdsUrl = getPdsEndpoint(didDoc)
+  if (!pdsUrl) return null
 
   // 3. Get authorization server from PDS resource metadata
   const resourceResp = await fetch(`${pdsUrl}/.well-known/oauth-protected-resource`)
@@ -101,6 +87,132 @@ async function resolveAuthServer(handle: string): Promise<{
     authorizationEndpoint: authMeta.authorization_endpoint,
     tokenEndpoint: authMeta.token_endpoint,
     pushedAuthorizationRequestEndpoint: authMeta.pushed_authorization_request_endpoint,
+  }
+}
+
+async function resolveDidDocument(did: string): Promise<DidDocument | null> {
+  if (did.startsWith('did:plc:')) {
+    const didResp = await fetch(`https://plc.directory/${did}`)
+    if (!didResp.ok) return null
+    try {
+      return await didResp.json() as DidDocument
+    } catch {
+      return null
+    }
+  }
+
+  if (did.startsWith('did:web:')) {
+    const domain = decodeURIComponent(did.slice('did:web:'.length))
+    // Block path traversal in did:web domains (e.g., did:web:evil.com%2F..%2Flocalhost)
+    if (domain.includes('/') || domain.includes('\\')) return null
+    const didWebUrl = `https://${domain}/.well-known/did.json`
+    if (!isSafeUrl(didWebUrl)) return null
+    const didResp = await fetch(didWebUrl)
+    if (!didResp.ok) return null
+    try {
+      return await didResp.json() as DidDocument
+    } catch {
+      return null
+    }
+  }
+
+  return null
+}
+
+function getPdsEndpoint(didDoc: DidDocument): string | null {
+  const endpoint = didDoc.service?.find(s => s.id === '#atproto_pds')?.serviceEndpoint
+  if (!endpoint || !isSafeUrl(endpoint)) return null
+  return endpoint.replace(/\/+$/, '')
+}
+
+function getHandleFromDidDocument(didDoc: DidDocument): string | null {
+  const atHandle = didDoc.alsoKnownAs?.find(a => a.startsWith('at://'))
+  return atHandle ? atHandle.slice('at://'.length) : null
+}
+
+function linkRecordRkey(npub: string): string {
+  // Deterministic key keeps one mutable record per user and proof type.
+  return `nostr-${npub.toLowerCase()}`
+}
+
+async function postWithDpop(
+  endpointUrl: string,
+  accessToken: string,
+  dpopPrivateJwk: JsonWebKey,
+  dpopPublicJwk: JsonWebKey,
+  body: unknown
+): Promise<Response> {
+  const privateKey = await importDPoPPrivateKey(dpopPrivateJwk)
+
+  const attempt = async (tokenType: 'DPoP' | 'Bearer', nonce?: string) => {
+    const proof = await createDPoPProof(privateKey, dpopPublicJwk, 'POST', endpointUrl, nonce)
+    return fetch(endpointUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `${tokenType} ${accessToken}`,
+        'DPoP': proof,
+      },
+      body: JSON.stringify(body),
+    })
+  }
+
+  let response = await attempt('DPoP')
+
+  // Handle DPoP nonce challenge.
+  const nonce = response.headers.get('DPoP-Nonce')
+  if (nonce && response.status === 400) {
+    response = await attempt('DPoP', nonce)
+  }
+
+  // Some servers still expect bearer for resource requests.
+  if ((response.status === 401 || response.status === 403) && !response.ok) {
+    response = await attempt('Bearer')
+  }
+
+  return response
+}
+
+async function writeNostrIdentityLinkRecord(
+  did: string,
+  pubkeyHex: string,
+  accessToken: string,
+  dpopPrivateJwk: JsonWebKey,
+  dpopPublicJwk: JsonWebKey
+): Promise<{ uri?: string; error?: string }> {
+  const didDoc = await resolveDidDocument(did)
+  if (!didDoc) return { error: 'Unable to resolve DID document' }
+
+  const pdsEndpoint = getPdsEndpoint(didDoc)
+  if (!pdsEndpoint) return { error: 'Unable to resolve ATProto PDS endpoint' }
+
+  const npub = hexToNpub(pubkeyHex)
+  const record = buildNostrIdentityLinkRecord(npub)
+  const rkey = linkRecordRkey(npub)
+
+  const response = await postWithDpop(
+    `${pdsEndpoint}/xrpc/com.atproto.repo.putRecord`,
+    accessToken,
+    dpopPrivateJwk,
+    dpopPublicJwk,
+    {
+      repo: did,
+      collection: DIVINE_IDENTITY_LINK_COLLECTION,
+      rkey,
+      record,
+      validate: false,
+    }
+  )
+
+  if (!response.ok) {
+    return { error: `Identity link write failed (${response.status})` }
+  }
+
+  try {
+    const data = await response.json() as { uri?: string }
+    return { uri: data.uri || `at://${did}/${DIVINE_IDENTITY_LINK_COLLECTION}/${rkey}` }
+  } catch {
+    return { uri: `at://${did}/${DIVINE_IDENTITY_LINK_COLLECTION}/${rkey}` }
   }
 }
 
@@ -304,7 +416,7 @@ async function processBlueskyToken(
   state: OAuthState,
   env: Bindings,
 ): Promise<{ success: boolean; returnUrl: string; error?: string; identity?: string }> {
-  let tokenData: { sub?: string }
+  let tokenData: { sub?: string; access_token?: string }
   try {
     tokenData = await tokenResp.json() as typeof tokenData
   } catch {
@@ -320,17 +432,30 @@ async function processBlueskyToken(
   // Resolve DID to handle for identity
   let handle = did
   try {
-    if (did.startsWith('did:plc:')) {
-      const didResp = await fetch(`https://plc.directory/${did}`)
-      if (didResp.ok) {
-        const didDoc = await didResp.json() as { alsoKnownAs?: string[] }
-        const atHandle = didDoc.alsoKnownAs?.find(a => a.startsWith('at://'))
-        if (atHandle) handle = atHandle.slice('at://'.length)
-      }
+    const didDoc = await resolveDidDocument(did)
+    if (didDoc) {
+      const resolvedHandle = getHandleFromDidDocument(didDoc)
+      if (resolvedHandle) handle = resolvedHandle
     }
   } catch {
     // Use DID as identity if handle resolution fails
   }
+
+  // Best effort: persist a durable identity-link record in the user's AT repo.
+  if (tokenData.access_token && state.dpopPrivateJwk && state.dpopPublicJwk) {
+    const linkWrite = await writeNostrIdentityLinkRecord(
+      did,
+      state.pubkey,
+      tokenData.access_token,
+      state.dpopPrivateJwk,
+      state.dpopPublicJwk
+    )
+    if (linkWrite.error) {
+      console.warn('Bluesky identity-link write failed:', linkWrite.error)
+    }
+  }
+
+  const checkedAt = Math.floor(Date.now() / 1000)
 
   // Store OAuth verification
   await storeOAuthVerification(env.CACHE_KV, {
@@ -339,8 +464,19 @@ async function processBlueskyToken(
     pubkey: state.pubkey,
     verified: true,
     method: 'oauth',
-    checked_at: Math.floor(Date.now() / 1000),
+    checked_at: checkedAt,
   })
+  // Also index by DID so clients can verify either handle or DID identities.
+  if (did !== handle) {
+    await storeOAuthVerification(env.CACHE_KV, {
+      platform: 'bluesky',
+      identity: did,
+      pubkey: state.pubkey,
+      verified: true,
+      method: 'oauth',
+      checked_at: checkedAt,
+    })
+  }
 
   return { success: true, returnUrl: state.returnUrl, identity: handle }
 }

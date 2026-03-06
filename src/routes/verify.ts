@@ -18,7 +18,7 @@ async function verifySingleClaim(
 ): Promise<VerifyResult> {
   const now = Math.floor(Date.now() / 1000)
   // Normalize pubkey to lowercase for consistent cache keys
-  const normalizedClaim = { ...claim, pubkey: normalizePubkey(claim.pubkey) }
+  const normalizedClaim = { ...claim, pubkey: normalizePubkey(claim.pubkey), proof: claim.proof || '' }
   const key = cacheKey(normalizedClaim.platform, normalizedClaim.identity, normalizedClaim.proof, normalizedClaim.pubkey)
 
   // Check cache first
@@ -29,6 +29,8 @@ async function verifySingleClaim(
       identity: normalizedClaim.identity,
       verified: cached.verified,
       error: cached.error,
+      method: cached.method,
+      provenance: cached.provenance,
       checked_at: cached.checked_at,
       cached: true,
     }
@@ -42,6 +44,11 @@ async function verifySingleClaim(
         platform: normalizedClaim.platform,
         identity: normalizedClaim.identity,
         verified: true,
+        method: 'oauth',
+        provenance: {
+          method: 'oauth',
+          evidence: ['oauth_verification_cache'],
+        },
         checked_at: oauthResult.checked_at,
         cached: true,
       }
@@ -85,6 +92,8 @@ async function verifySingleClaim(
     const cacheResult: CachedResult = {
       verified: result.verified,
       error: result.error,
+      method: result.method,
+      provenance: result.provenance,
       checked_at: now,
       type: result.verified ? 'verified' : 'failed',
     }
@@ -95,6 +104,8 @@ async function verifySingleClaim(
       identity: normalizedClaim.identity,
       verified: result.verified,
       error: result.error,
+      method: result.method,
+      provenance: result.provenance,
       checked_at: now,
       cached: false,
     }
@@ -194,14 +205,19 @@ verify.post('/single', async (c) => {
   if (!body.identity || !isValidIdentity(body.identity)) {
     return c.json({ error: 'Invalid or missing identity' }, 400)
   }
-  if (!body.proof || !isValidProof(body.proof)) {
-    return c.json({ error: 'Invalid or missing proof' }, 400)
+  const proof = body.proof || ''
+  if (body.platform !== 'bluesky') {
+    if (!proof || !isValidProof(proof)) {
+      return c.json({ error: 'Invalid or missing proof' }, 400)
+    }
+  } else if (proof && !isValidProof(proof)) {
+    return c.json({ error: 'Invalid proof' }, 400)
   }
 
   const claim: VerifyClaim = {
     platform: body.platform as Platform,
     identity: body.identity,
-    proof: body.proof,
+    proof,
     pubkey: body.pubkey,
   }
   const result = await verifySingleClaim(claim, c.env, clientIp)
