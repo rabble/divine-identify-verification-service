@@ -453,14 +453,38 @@ app.get('/', (c) => {
         <div class="verify-card">
           <span class="step-pill">Step 1</span>
           <h3 style="margin-top:0;">Sign in with your Nostr account</h3>
-          <p>Use your signer/extension. This lets us publish the final verification tag into your Nostr profile (kind 0).</p>
+          <p>Use your browser signer, login.divine.video session, bunker URL, or Nostr Connect. Any of these lets us publish the final verification tag into your Nostr profile (kind 0).</p>
           <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.6rem;">
             <button id="connect-nostr-btn" class="verify-btn verify-btn-primary" type="button">Login with Nostr</button>
+            <button id="connect-keycast-btn" class="verify-btn" type="button">Use login.divine.video</button>
             <a href="${divineLoginUrl}" target="_blank" rel="noopener noreferrer" class="btn btn-outline" style="padding:0.52rem 0.85rem;border-radius:8px;font-size:0.9rem;">Open login.divine.video</a>
           </div>
           <label for="verify-pubkey-input" class="field-label">Account (auto-filled after login; manual paste fallback)</label>
           <input id="verify-pubkey-input" class="field-input" type="text" placeholder="alice@divine.video or npub1...">
-          <p class="field-help">If signer is not available, you can still paste your Divine address, npub, profile URL, or 64-char key.</p>
+          <p id="signer-session-summary" class="field-help" style="display:none;"></p>
+          <p class="field-help">If a signer session is not available, you can still paste your Divine address, npub, profile URL, or 64-char key.</p>
+          <details class="advanced-proof" id="remote-signer-details" style="margin-top:0.75rem;">
+            <summary>Remote signer options: bunker and Nostr Connect</summary>
+            <div class="advanced-proof-inner">
+              <p style="margin-bottom:0.75rem;">Paste a bunker URL or bunker NIP-05, or generate a Nostr Connect URI for your signer app.</p>
+              <label for="bunker-input" class="field-label">Bunker URL or bunker NIP-05</label>
+              <input id="bunker-input" class="field-input" type="text" placeholder="bunker://... or signer@example.com">
+              <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.75rem;">
+                <button id="connect-bunker-btn" class="verify-btn" type="button">Connect bunker</button>
+                <button id="start-nostr-connect-btn" class="verify-btn" type="button">Start Nostr Connect</button>
+              </div>
+              <div id="nostr-connect-wrap" style="display:none;margin-top:0.85rem;">
+                <label for="nostr-connect-uri-input" class="field-label">Nostr Connect URI</label>
+                <textarea id="nostr-connect-uri-input" class="field-input" rows="3" readonly style="min-height:6.5rem;resize:vertical;"></textarea>
+                <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.75rem;">
+                  <button id="copy-nostr-connect-btn" class="verify-btn" type="button">Copy URI</button>
+                  <a id="open-nostr-connect-link" class="btn btn-outline" href="#" rel="noopener noreferrer" style="padding:0.52rem 0.85rem;border-radius:8px;font-size:0.9rem;">Open signer app</a>
+                  <button id="cancel-nostr-connect-btn" class="verify-btn" type="button">Cancel</button>
+                </div>
+                <p class="field-help" style="margin-top:0.5rem;">Open this URI in your signer app, or copy it into a bunker / Nostr Connect client.</p>
+              </div>
+            </div>
+          </details>
           <div id="verify-login-status" class="status-row"></div>
           <div id="verify-global-status" class="status-row"></div>
         </div>
@@ -716,8 +740,23 @@ GET ${origin}/auth/bluesky/start?pubkey=hex64&amp;handle=alice.bsky.social&amp;r
     <script>
     const API = '${origin}';
     const DIVINE_LOGIN_URL = '${divineLoginUrl}';
+    const KEYCAST_BASE = 'https://login.divine.video';
+    const KEYCAST_CLIENT_ID = 'Divine Identity Verification';
+    const KEYCAST_SCOPE = 'policy:social';
+    const KEYCAST_SESSION_KEY = 'verifyer_keycast_session_v1';
+    const KEYCAST_PKCE_KEY = 'verifyer_keycast_pkce_v1';
+    const KEYCAST_STATE_KEY = 'verifyer_keycast_state_v1';
+    const KEYCAST_HASH_KEY = 'verifyer_keycast_hash_v1';
+    const NOSTR_TOOLS_NIP46_URL = 'https://esm.sh/nostr-tools@2.23.3/nip46?bundle';
+    const NOSTR_TOOLS_PURE_URL = 'https://esm.sh/nostr-tools@2.23.3/pure?bundle';
     const PROFILE_RELAYS = ['wss://relay.divine.video', 'wss://relay.damus.io', 'wss://relay.nostr.band'];
+    // NIP-46 traffic needs relays that accept kind 24133 events.
+    const REMOTE_SIGNER_RELAYS = ['wss://relay.damus.io', 'wss://nos.lol', 'wss://relay.snort.social', 'wss://relay.primal.net'];
     let signerPubkeyHex = null;
+    let activeSigner = null;
+    let activeSignerSource = null;
+    let nostrToolsPromise = null;
+    let nostrConnectAbortController = null;
 
     function npubToHex(npub) {
       const CHARSET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
@@ -755,6 +794,269 @@ GET ${origin}/auth/bluesky/start?pubkey=hex64&amp;handle=alice.bsky.social&amp;r
     function clearStatus(elId) {
       const el = document.getElementById(elId);
       if (el) el.style.display = 'none';
+    }
+
+    function signerSourceLabel(source) {
+      if (source === 'browser') return 'browser signer';
+      if (source === 'keycast') return 'login.divine.video';
+      if (source === 'bunker') return 'bunker';
+      if (source === 'nostrconnect') return 'Nostr Connect';
+      return '';
+    }
+
+    function updateSignerSummary() {
+      const el = document.getElementById('signer-session-summary');
+      if (!el) return;
+      const parts = [];
+      if (activeSignerSource) {
+        parts.push('Connected via ' + signerSourceLabel(activeSignerSource) + '.');
+      }
+      if (signerPubkeyHex) {
+        parts.push('Active key: ' + signerPubkeyHex.slice(0, 12) + '...' + signerPubkeyHex.slice(-8));
+      }
+      if (parts.length === 0) {
+        el.style.display = 'none';
+        el.textContent = '';
+        return;
+      }
+      el.style.display = 'block';
+      el.textContent = parts.join(' ');
+    }
+
+    function isBrowserSignerAvailable() {
+      return !!window.nostr &&
+        typeof window.nostr.getPublicKey === 'function' &&
+        typeof window.nostr.signEvent === 'function';
+    }
+
+    function createBrowserSigner() {
+      return {
+        async getPublicKey() {
+          return (await window.nostr.getPublicKey()).toLowerCase();
+        },
+        async signEvent(event) {
+          return await window.nostr.signEvent(event);
+        },
+      };
+    }
+
+    async function maybeCloseSigner(signer) {
+      if (!signer) return;
+      if (typeof signer.close === 'function') {
+        try {
+          await signer.close();
+        } catch {}
+      }
+    }
+
+    async function activateSigner(signer, source, successMessage) {
+      const pubkey = String(await signer.getPublicKey()).toLowerCase();
+      if (!/^[0-9a-f]{64}$/i.test(pubkey)) {
+        throw new Error('Signer returned an invalid pubkey.');
+      }
+      const previousSigner = activeSigner;
+      activeSigner = signer;
+      activeSignerSource = source;
+      signerPubkeyHex = pubkey;
+      setAccountInputValue(pubkey);
+      updateSignerSummary();
+      if (previousSigner && previousSigner !== signer) {
+        await maybeCloseSigner(previousSigner);
+      }
+      if (successMessage) {
+        setStatus('verify-login-status', successMessage, 'ok');
+      }
+      return pubkey;
+    }
+
+    function bytesToBase64Url(bytes) {
+      let binary = '';
+      for (const byte of bytes) {
+        binary += String.fromCharCode(byte);
+      }
+      return btoa(binary).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/g, '');
+    }
+
+    function randomBase64Url(size) {
+      const bytes = new Uint8Array(size);
+      crypto.getRandomValues(bytes);
+      return bytesToBase64Url(bytes);
+    }
+
+    async function sha256Base64Url(text) {
+      const data = new TextEncoder().encode(text);
+      const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', data));
+      return bytesToBase64Url(digest);
+    }
+
+    async function createKeycastPkce() {
+      const verifier = randomBase64Url(32);
+      const challenge = await sha256Base64Url(verifier);
+      return { verifier: verifier, challenge: challenge };
+    }
+
+    function getKeycastRedirectUrl() {
+      return window.location.origin + window.location.pathname;
+    }
+
+    function normalizeStoredKeycastSession(raw) {
+      if (!raw || typeof raw !== 'object') return null;
+      const accessToken = raw.accessToken || raw.access_token || '';
+      if (!accessToken) return null;
+      const expiresAt = raw.expiresAt || (raw.expires_in ? Date.now() + Number(raw.expires_in) * 1000 : null);
+      return {
+        accessToken: accessToken,
+        refreshToken: raw.refreshToken || raw.refresh_token || '',
+        bunkerUrl: raw.bunkerUrl || raw.bunker_url || '',
+        authorizationHandle: raw.authorizationHandle || raw.authorization_handle || '',
+        expiresAt: expiresAt || null,
+      };
+    }
+
+    function loadKeycastSession() {
+      try {
+        return normalizeStoredKeycastSession(JSON.parse(localStorage.getItem(KEYCAST_SESSION_KEY) || 'null'));
+      } catch {
+        return null;
+      }
+    }
+
+    function saveKeycastSession(session) {
+      localStorage.setItem(KEYCAST_SESSION_KEY, JSON.stringify(session));
+    }
+
+    function clearKeycastSession() {
+      localStorage.removeItem(KEYCAST_SESSION_KEY);
+    }
+
+    function clearKeycastFlowState() {
+      sessionStorage.removeItem(KEYCAST_PKCE_KEY);
+      sessionStorage.removeItem(KEYCAST_STATE_KEY);
+      sessionStorage.removeItem(KEYCAST_HASH_KEY);
+    }
+
+    function shouldRefreshKeycastSession(session) {
+      return !!session &&
+        !!session.refreshToken &&
+        !!session.expiresAt &&
+        Date.now() >= Number(session.expiresAt) - 5 * 60 * 1000;
+    }
+
+    function hasExpiredKeycastSession(session) {
+      return !!session && !!session.expiresAt && Date.now() >= Number(session.expiresAt);
+    }
+
+    async function postKeycastTokenRequest(body) {
+      const resp = await fetch(KEYCAST_BASE + '/api/oauth/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      let data = {};
+      try {
+        data = await resp.json();
+      } catch {}
+      if (!resp.ok) {
+        throw new Error(data.error_description || data.error || 'login.divine.video token exchange failed.');
+      }
+      return data;
+    }
+
+    async function getValidKeycastSession(session) {
+      let nextSession = session || loadKeycastSession();
+      if (!nextSession) return null;
+      if (shouldRefreshKeycastSession(nextSession)) {
+        let refreshed;
+        try {
+          refreshed = await postKeycastTokenRequest({
+            grant_type: 'refresh_token',
+            refresh_token: nextSession.refreshToken,
+            client_id: KEYCAST_CLIENT_ID,
+          });
+        } catch (err) {
+          clearKeycastSession();
+          throw err;
+        }
+        nextSession = normalizeStoredKeycastSession(refreshed);
+        if (!nextSession) throw new Error('login.divine.video returned an unusable session.');
+        saveKeycastSession(nextSession);
+        return nextSession;
+      }
+      if (hasExpiredKeycastSession(nextSession)) {
+        clearKeycastSession();
+        return null;
+      }
+      return nextSession;
+    }
+
+    async function callKeycastRpc(sessionRef, method, params) {
+      sessionRef.session = await getValidKeycastSession(sessionRef.session);
+      if (!sessionRef.session || !sessionRef.session.accessToken) {
+        throw new Error('Your login.divine.video session expired. Connect again.');
+      }
+      const resp = await fetch(KEYCAST_BASE + '/api/nostr', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + sessionRef.session.accessToken,
+        },
+        body: JSON.stringify({ method: method, params: params }),
+      });
+      let data = {};
+      try {
+        data = await resp.json();
+      } catch {}
+      if (!resp.ok) {
+        throw new Error(data.error || data.message || 'login.divine.video signer request failed.');
+      }
+      if (!data || data.result === undefined) {
+        throw new Error('login.divine.video signer returned no result.');
+      }
+      return data.result;
+    }
+
+    function createKeycastSigner(session) {
+      const sessionRef = { session: session };
+      return {
+        async getPublicKey() {
+          return await callKeycastRpc(sessionRef, 'get_public_key', []);
+        },
+        async signEvent(event) {
+          return await callKeycastRpc(sessionRef, 'sign_event', [event]);
+        },
+      };
+    }
+
+    function showNostrConnectUi(uri) {
+      const wrap = document.getElementById('nostr-connect-wrap');
+      const input = document.getElementById('nostr-connect-uri-input');
+      const link = document.getElementById('open-nostr-connect-link');
+      if (!wrap || !input || !link) return;
+      wrap.style.display = 'block';
+      input.value = uri;
+      link.href = uri;
+      document.getElementById('remote-signer-details').open = true;
+    }
+
+    function hideNostrConnectUi() {
+      const wrap = document.getElementById('nostr-connect-wrap');
+      const input = document.getElementById('nostr-connect-uri-input');
+      const link = document.getElementById('open-nostr-connect-link');
+      if (wrap) wrap.style.display = 'none';
+      if (input) input.value = '';
+      if (link) link.href = '#';
+    }
+
+    async function loadNostrTools() {
+      if (!nostrToolsPromise) {
+        nostrToolsPromise = Promise.all([
+          import(NOSTR_TOOLS_NIP46_URL),
+          import(NOSTR_TOOLS_PURE_URL),
+        ]).then(function(modules) {
+          return { nip46: modules[0], pure: modules[1] };
+        });
+      }
+      return await nostrToolsPromise;
     }
 
     function safeDecodeText(input) {
@@ -837,7 +1139,9 @@ GET ${origin}/auth/bluesky/start?pubkey=hex64&amp;handle=alice.bsky.social&amp;r
       const hintPubkey = inferLoginQueryPubkey(params);
       if (!hintPubkey) return;
       signerPubkeyHex = hintPubkey;
+      activeSignerSource = null;
       setAccountInputValue(hintPubkey);
+      updateSignerSummary();
       setStatus('verify-login-status', 'Logged in. Nostr key detected from return URL.', 'ok');
       params.delete('npub');
       params.delete('pubkey');
@@ -847,50 +1151,246 @@ GET ${origin}/auth/bluesky/start?pubkey=hex64&amp;handle=alice.bsky.social&amp;r
       window.history.replaceState({}, '', cleanUrl);
     }
 
+    async function connectBrowserSigner() {
+      const browserSigner = createBrowserSigner();
+      const loginUrl = KEYCAST_BASE + '/api/auth/login';
+      const unsignedEvent = {
+        kind: 27235,
+        content: '',
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [
+          ['u', loginUrl],
+          ['method', 'POST'],
+        ],
+      };
+
+      setStatus('verify-login-status', 'Requesting signature from your browser signer...', 'loading');
+      const signedEvent = await browserSigner.signEvent(unsignedEvent);
+      if (!signedEvent || typeof signedEvent !== 'object') {
+        throw new Error('Signer did not return a valid login event.');
+      }
+
+      setStatus('verify-login-status', 'Verifying login with login.divine.video...', 'loading');
+      const resp = await fetch(API + '/auth/nostr/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event: signedEvent }),
+      });
+      const data = await resp.json();
+      if (!resp.ok || !data || !data.pubkey) {
+        throw new Error((data && data.error) || 'Nostr login failed.');
+      }
+
+      const loginPubkey = String(data.pubkey).toLowerCase();
+      const signerPubkey = await browserSigner.getPublicKey();
+      if (loginPubkey !== signerPubkey) {
+        throw new Error('The signed login event did not match your browser signer key.');
+      }
+
+      await activateSigner(browserSigner, 'browser', 'Signed in with your browser signer.');
+    }
+
+    async function startKeycastLogin() {
+      const pkce = await createKeycastPkce();
+      const state = randomBase64Url(24);
+      sessionStorage.setItem(KEYCAST_PKCE_KEY, JSON.stringify(pkce));
+      sessionStorage.setItem(KEYCAST_STATE_KEY, state);
+      sessionStorage.setItem(KEYCAST_HASH_KEY, window.location.hash || '#verify-here');
+
+      const session = loadKeycastSession();
+      const url = new URL(KEYCAST_BASE + '/api/oauth/authorize');
+      url.searchParams.set('client_id', KEYCAST_CLIENT_ID);
+      url.searchParams.set('redirect_uri', getKeycastRedirectUrl());
+      url.searchParams.set('scope', KEYCAST_SCOPE);
+      url.searchParams.set('code_challenge', pkce.challenge);
+      url.searchParams.set('code_challenge_method', 'S256');
+      url.searchParams.set('state', state);
+      url.searchParams.set('default_register', 'true');
+      if (session && session.authorizationHandle) {
+        url.searchParams.set('authorization_handle', session.authorizationHandle);
+      }
+      window.location.href = url.toString();
+    }
+
+    function cleanKeycastCallbackParams() {
+      const params = new URLSearchParams(window.location.search);
+      params.delete('code');
+      params.delete('state');
+      params.delete('error');
+      params.delete('error_description');
+      const nextHash = sessionStorage.getItem(KEYCAST_HASH_KEY) || window.location.hash;
+      const cleanUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '') + (nextHash || '');
+      window.history.replaceState({}, '', cleanUrl);
+      clearKeycastFlowState();
+    }
+
+    async function maybeHandleKeycastCallback() {
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get('code');
+      const error = params.get('error');
+      if (!code && !error) return false;
+
+      clearStatus('verify-global-status');
+      setStatus('verify-login-status', 'Finishing login.divine.video session...', 'loading');
+      try {
+        if (error) {
+          throw new Error(params.get('error_description') || error);
+        }
+
+        const expectedState = sessionStorage.getItem(KEYCAST_STATE_KEY);
+        const receivedState = params.get('state');
+        if (!expectedState || !receivedState || expectedState !== receivedState) {
+          throw new Error('login.divine.video returned an invalid state token.');
+        }
+
+        let pkce;
+        try {
+          pkce = JSON.parse(sessionStorage.getItem(KEYCAST_PKCE_KEY) || 'null');
+        } catch {
+          pkce = null;
+        }
+        if (!pkce || !pkce.verifier) {
+          throw new Error('Missing PKCE verifier. Start login again.');
+        }
+
+        const tokenData = await postKeycastTokenRequest({
+          grant_type: 'authorization_code',
+          code: code,
+          client_id: KEYCAST_CLIENT_ID,
+          redirect_uri: getKeycastRedirectUrl(),
+          code_verifier: pkce.verifier,
+        });
+        const session = normalizeStoredKeycastSession(tokenData);
+        if (!session) {
+          throw new Error('login.divine.video did not return a usable signer session.');
+        }
+        saveKeycastSession(session);
+        await activateSigner(createKeycastSigner(session), 'keycast', 'Connected with login.divine.video.');
+      } catch (e) {
+        clearKeycastSession();
+        setStatus('verify-login-status', e.message || 'Could not connect login.divine.video.', 'error');
+      } finally {
+        cleanKeycastCallbackParams();
+      }
+      return true;
+    }
+
+    async function restoreKeycastSession() {
+      const session = await getValidKeycastSession();
+      if (!session) return false;
+      try {
+        await activateSigner(createKeycastSigner(session), 'keycast', 'Reconnected login.divine.video signer session.');
+        return true;
+      } catch {
+        clearKeycastSession();
+        return false;
+      }
+    }
+
+    async function connectKeycastSigner() {
+      clearStatus('verify-login-status');
+      setStatus('verify-login-status', 'Opening secure login.divine.video...', 'loading');
+      await startKeycastLogin();
+    }
+
+    async function connectBunkerSigner() {
+      clearStatus('verify-login-status');
+      const input = document.getElementById('bunker-input').value.trim();
+      if (!input) {
+        setStatus('verify-login-status', 'Paste a bunker URL or bunker NIP-05 first.', 'error');
+        return;
+      }
+      try {
+        setButtonLoading('connect-bunker-btn', true, 'Connecting...');
+        setStatus('verify-login-status', 'Connecting to bunker signer...', 'loading');
+        const tools = await loadNostrTools();
+        const parsed = await tools.nip46.parseBunkerInput(input);
+        if (!parsed) {
+          throw new Error('Could not read that bunker URL or bunker NIP-05.');
+        }
+        const signer = tools.nip46.BunkerSigner.fromBunker(tools.pure.generateSecretKey(), parsed);
+        await signer.connect();
+        hideNostrConnectUi();
+        await activateSigner(signer, 'bunker', 'Connected with bunker signer.');
+      } catch (e) {
+        setStatus('verify-login-status', e.message || 'Could not connect bunker signer.', 'error');
+      } finally {
+        setButtonLoading('connect-bunker-btn', false, '');
+      }
+    }
+
+    async function startNostrConnect() {
+      clearStatus('verify-login-status');
+      try {
+        setButtonLoading('start-nostr-connect-btn', true, 'Waiting...');
+        setStatus('verify-login-status', 'Preparing Nostr Connect session...', 'loading');
+        const tools = await loadNostrTools();
+        const clientSecretKey = tools.pure.generateSecretKey();
+        const secret = randomBase64Url(18);
+        const uri = tools.nip46.createNostrConnectURI({
+          clientPubkey: tools.pure.getPublicKey(clientSecretKey),
+          relays: REMOTE_SIGNER_RELAYS,
+          secret: secret,
+          perms: ['get_public_key', 'sign_event'],
+          name: 'Divine Verification',
+          url: window.location.origin,
+        });
+        if (nostrConnectAbortController) {
+          nostrConnectAbortController.abort();
+        }
+        nostrConnectAbortController = new AbortController();
+        showNostrConnectUi(uri);
+        setStatus('verify-login-status', 'Waiting for your signer to approve the Nostr Connect request...', 'loading');
+        const signer = await tools.nip46.BunkerSigner.fromURI(
+          clientSecretKey,
+          uri,
+          {},
+          nostrConnectAbortController.signal
+        );
+        nostrConnectAbortController = null;
+        hideNostrConnectUi();
+        await activateSigner(signer, 'nostrconnect', 'Connected with Nostr Connect.');
+      } catch (e) {
+        const aborted = e && (e.name === 'AbortError' || String(e.message || '').toLowerCase().includes('aborted'));
+        if (aborted) {
+          clearStatus('verify-login-status');
+        } else {
+          setStatus('verify-login-status', e.message || 'Could not connect with Nostr Connect.', 'error');
+        }
+      } finally {
+        setButtonLoading('start-nostr-connect-btn', false, '');
+      }
+    }
+
+    function cancelNostrConnect() {
+      if (nostrConnectAbortController) {
+        nostrConnectAbortController.abort();
+        nostrConnectAbortController = null;
+      }
+      hideNostrConnectUi();
+      clearStatus('verify-login-status');
+    }
+
+    async function copyNostrConnectUri() {
+      const input = document.getElementById('nostr-connect-uri-input');
+      if (!input || !input.value) return;
+      try {
+        await navigator.clipboard.writeText(input.value);
+        setStatus('verify-login-status', 'Nostr Connect URI copied.', 'ok');
+      } catch {
+        setStatus('verify-login-status', 'Could not copy the Nostr Connect URI.', 'error');
+      }
+    }
+
     async function connectNostrSigner() {
       clearStatus('verify-login-status');
       try {
         setButtonLoading('connect-nostr-btn', true, 'Signing in...');
-        if (!window.nostr || typeof window.nostr.signEvent !== 'function') {
-          setStatus('verify-login-status', 'Opening secure Divine Login...', 'loading');
-          window.location.href = DIVINE_LOGIN_URL;
+        if (isBrowserSignerAvailable()) {
+          await connectBrowserSigner();
           return;
         }
-
-        const loginUrl = 'https://login.divine.video/api/auth/login';
-        const unsignedEvent = {
-          kind: 27235,
-          content: '',
-          created_at: Math.floor(Date.now() / 1000),
-          tags: [
-            ['u', loginUrl],
-            ['method', 'POST'],
-          ],
-        };
-
-        setStatus('verify-login-status', 'Requesting signature from your signer...', 'loading');
-        const signedEvent = await window.nostr.signEvent(unsignedEvent);
-        if (!signedEvent || typeof signedEvent !== 'object') {
-          throw new Error('Signer did not return a valid login event.');
-        }
-
-        setStatus('verify-login-status', 'Verifying login with login.divine.video...', 'loading');
-        const resp = await fetch(API + '/auth/nostr/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ event: signedEvent }),
-        });
-        const data = await resp.json();
-        if (!resp.ok || !data || !data.pubkey) {
-          throw new Error((data && data.error) || 'Nostr login failed.');
-        }
-
-        const pubkey = String(data.pubkey).toLowerCase();
-        if (!/^[0-9a-f]{64}$/i.test(pubkey)) throw new Error('Login returned an invalid pubkey.');
-
-        signerPubkeyHex = pubkey.toLowerCase();
-        setAccountInputValue(signerPubkeyHex);
-        setStatus('verify-login-status', 'Signed in with Nostr via login.divine.video.', 'ok');
+        await connectKeycastSigner();
       } catch (e) {
         setStatus('verify-login-status', e.message || 'Could not sign in with Nostr.', 'error');
       } finally {
@@ -1251,17 +1751,18 @@ GET ${origin}/auth/bluesky/start?pubkey=hex64&amp;handle=alice.bsky.social&amp;r
         setButtonLoading('publish-kind0-btn', true, 'Publishing...');
         setStatus('publish-status', 'Checking signer and profile...', 'loading');
 
-        if (!window.nostr || typeof window.nostr.signEvent !== 'function') {
-          throw new Error('A Nostr signer is required to publish. Click "Login with Nostr" first.');
+        if (!activeSigner || typeof activeSigner.signEvent !== 'function' || typeof activeSigner.getPublicKey !== 'function') {
+          throw new Error('A signer session is required to publish. Connect a browser signer, login.divine.video, bunker, or Nostr Connect first.');
         }
 
         const activePubkey = await getActivePubkey();
-        const signerPubkey = (await window.nostr.getPublicKey()).toLowerCase();
+        const signerPubkey = String(await activeSigner.getPublicKey()).toLowerCase();
         if (activePubkey !== signerPubkey) {
           throw new Error('Signed-in key and selected account do not match.');
         }
         signerPubkeyHex = signerPubkey;
         setAccountInputValue(signerPubkey);
+        updateSignerSummary();
 
         const link = currentProofContext();
         if (!link.identity) {
@@ -1292,9 +1793,12 @@ GET ${origin}/auth/bluesky/start?pubkey=hex64&amp;handle=alice.bsky.social&amp;r
         };
 
         setStatus('publish-status', 'Requesting signature from your signer...', 'loading');
-        const signedEvent = await window.nostr.signEvent(unsignedEvent);
+        const signedEvent = await activeSigner.signEvent(unsignedEvent);
         if (!signedEvent || !signedEvent.id || !signedEvent.sig) {
           throw new Error('Signer did not return a valid signed event.');
+        }
+        if (String(signedEvent.pubkey || '').toLowerCase() !== signerPubkey) {
+          throw new Error('Signer returned an event for a different pubkey.');
         }
 
         setStatus('publish-status', 'Publishing kind 0 event to relays...', 'loading');
@@ -1526,6 +2030,21 @@ GET ${origin}/auth/bluesky/start?pubkey=hex64&amp;handle=alice.bsky.social&amp;r
 
     // Verify Here wiring
     document.getElementById('connect-nostr-btn').addEventListener('click', connectNostrSigner);
+    document.getElementById('connect-keycast-btn').addEventListener('click', async () => {
+      clearStatus('verify-login-status');
+      try {
+        setButtonLoading('connect-keycast-btn', true, 'Opening...');
+        await connectKeycastSigner();
+      } catch (e) {
+        setStatus('verify-login-status', e.message || 'Could not open login.divine.video.', 'error');
+      } finally {
+        setButtonLoading('connect-keycast-btn', false, '');
+      }
+    });
+    document.getElementById('connect-bunker-btn').addEventListener('click', connectBunkerSigner);
+    document.getElementById('start-nostr-connect-btn').addEventListener('click', startNostrConnect);
+    document.getElementById('copy-nostr-connect-btn').addEventListener('click', copyNostrConnectUri);
+    document.getElementById('cancel-nostr-connect-btn').addEventListener('click', cancelNostrConnect);
     document.getElementById('oauth-platform-select').addEventListener('change', updateOAuthInputs);
     document.getElementById('proof-platform-select').addEventListener('change', updateProofInputs);
     document.getElementById('oauth-start-btn').addEventListener('click', startOAuthVerification);
@@ -1540,6 +2059,9 @@ GET ${origin}/auth/bluesky/start?pubkey=hex64&amp;handle=alice.bsky.social&amp;r
     document.getElementById('proof-proof-input').addEventListener('keydown', (e) => {
       if (e.key === 'Enter') verifySingleHere();
     });
+    document.getElementById('bunker-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') connectBunkerSigner();
+    });
     document.getElementById('verify-pubkey-input').addEventListener('blur', () => {
       const value = document.getElementById('verify-pubkey-input').value.trim();
       if (value) localStorage.setItem('verifyer_account_input', value);
@@ -1548,10 +2070,18 @@ GET ${origin}/auth/bluesky/start?pubkey=hex64&amp;handle=alice.bsky.social&amp;r
     if (savedAccountInput) {
       document.getElementById('verify-pubkey-input').value = savedAccountInput;
     }
-    applyLoginQueryHint();
     updateOAuthInputs();
     updateProofInputs();
     handleOAuthCallbackMessage();
+    updateSignerSummary();
+    (async () => {
+      const handledKeycast = await maybeHandleKeycastCallback();
+      if (!handledKeycast) {
+        applyLoginQueryHint();
+        await restoreKeycastSession();
+      }
+      updateSignerSummary();
+    })();
 
     // Lookup tool Enter key
     document.getElementById('lookup-input').addEventListener('keydown', (e) => {
